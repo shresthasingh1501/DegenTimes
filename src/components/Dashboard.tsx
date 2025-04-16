@@ -1,6 +1,7 @@
 // src/components/Dashboard.tsx
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Mail, Hand as BrandX, GitBranch as BrandTelegram, Settings, LogOut, User, ChevronDown, ArrowUpRight, X as CloseIcon, FilePdf, Download, Loader2 as LoaderIcon, AlertCircle } from 'lucide-react'; // Added Download, LoaderIcon, AlertCircle
+// Corrected the import: Replaced FilePdf with FileText
+import { Mail, Hand as BrandX, GitBranch as BrandTelegram, Settings, LogOut, User, ChevronDown, ArrowUpRight, X as CloseIcon, FileText, Download, Loader2 as LoaderIcon, AlertCircle } from 'lucide-react';
 import { UserPreferences } from './OnboardingWizard';
 import { GoogleUserProfile } from '../App';
 // Removed react-pdf imports
@@ -63,9 +64,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const accountPopupRef = useRef<HTMLDivElement>(null);
 
     // State for fetching the PDF URL
-    const [pdfUrlLoading, setPdfUrlLoading] = useState(true); // Renamed for clarity
-    const [pdfUrlError, setPdfUrlError] = useState<string | null>(null); // Renamed for clarity
-    const [pdfURL, setPdfURL] = useState<string | null>(null); // Stores the fetched URL string
+    const [pdfUrlLoading, setPdfUrlLoading] = useState(true);
+    const [pdfUrlError, setPdfUrlError] = useState<string | null>(null);
+    const [pdfURL, setPdfURL] = useState<string | null>(null);
 
 
     // --- Effects ---
@@ -299,7 +300,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                          )}
                          {!pdfUrlLoading && !pdfUrlError && pdfURL && (
                              <>
-                                <FilePdf className="w-16 h-16 text-purple-500 dark:text-purple-400 mb-4" />
+                                {/* Corrected the icon usage: Replaced FilePdf with FileText */}
+                                <FileText className="w-16 h-16 text-purple-500 dark:text-purple-400 mb-4" />
                                 <button
                                     onClick={handleDownloadClick}
                                     disabled={!pdfURL} // Should always be enabled here, but good practice
