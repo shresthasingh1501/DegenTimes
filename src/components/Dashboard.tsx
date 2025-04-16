@@ -1,23 +1,11 @@
 // src/components/Dashboard.tsx
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Mail, Hand as BrandX, GitBranch as BrandTelegram, Settings, LogOut, User, ChevronDown, ArrowUpRight, X as CloseIcon, FilePdf } from 'lucide-react';
+import { Mail, Hand as BrandX, GitBranch as BrandTelegram, Settings, LogOut, User, ChevronDown, ArrowUpRight, X as CloseIcon, FilePdf, Download, Loader2 as LoaderIcon, AlertCircle } from 'lucide-react'; // Added Download, LoaderIcon, AlertCircle
 import { UserPreferences } from './OnboardingWizard';
 import { GoogleUserProfile } from '../App';
-import { Document, Page, pdfjs } from 'react-pdf';
-import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
-import 'react-pdf/dist/esm/Page/TextLayer.css';
-import * as base64js from 'base64-js'; // Import base64-js
+// Removed react-pdf imports
 
-// --- PDF Viewer Configuration ---
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
-
-interface FileInfo {
-    id: number;
-    path: string;
-    fullUrl: string;
-    summary: string;
-    size: number;
-}
+// Removed FileInfo interface if only used for PDF viewer
 
 // --- Modal Component --- (Keep your existing Modal implementation)
 interface ModalProps {
@@ -74,12 +62,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     const accountPopupRef = useRef<HTMLDivElement>(null);
 
-    // PDF Viewer States
-    const [numPages, setNumPages] = useState<number | null>(null);
-    const [pageNumber, setPageNumber] = useState(1);
-    const [pdfLoading, setPdfLoading] = useState(true);
-    const [pdfError, setPdfError] = useState<string | null>(null);
-    const [pdfURL, setPdfURL] = useState<string | null>(null); // Changed to string | null
+    // State for fetching the PDF URL
+    const [pdfUrlLoading, setPdfUrlLoading] = useState(true); // Renamed for clarity
+    const [pdfUrlError, setPdfUrlError] = useState<string | null>(null); // Renamed for clarity
+    const [pdfURL, setPdfURL] = useState<string | null>(null); // Stores the fetched URL string
 
 
     // --- Effects ---
@@ -94,59 +80,76 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }, []);
 
     useEffect(() => {
-        const fetchPdfData = async () => {
-            console.log("Dashboard.tsx: fetchPdfData called");  //Debug: function entry
-            setPdfLoading(true);
-            setPdfError(null);
+        const fetchPdfDownloadUrl = async () => {
+            console.log("Dashboard.tsx: fetchPdfDownloadUrl called");
+            setPdfUrlLoading(true);
+            setPdfUrlError(null);
+            setPdfURL(null); // Reset URL on new fetch
             try {
-                console.log("Dashboard.tsx: Fetching PDF data from /api/pdf-brief...");
-                const response = await fetch('/api/pdf-brief'); // Call your Vercel function
+                console.log("Dashboard.tsx: Fetching PDF URL from /api/pdf-brief...");
+                const response = await fetch('/api/pdf-brief');
 
                 console.log("Dashboard.tsx: Response status from /api/pdf-brief:", response.status);
 
                 if (!response.ok) {
-                    const errorData = await response.json();
+                    let errorData;
+                    try {
+                        errorData = await response.json(); // Try parsing error JSON
+                    } catch (parseError) {
+                         // If JSON parsing fails, use status text
+                         errorData = { error: response.statusText || `HTTP error ${response.status}` };
+                    }
                     console.error("Dashboard.tsx: Error from /api/pdf-brief:", errorData);
                     throw new Error(errorData.error || `HTTP error! Status: ${response.status}`);
                 }
 
-                // Get the PDF data as an ArrayBuffer
-                const pdfData = await response.arrayBuffer();
-                console.log("Dashboard.tsx: PDF data received (ArrayBuffer)");
+                const data = await response.json();
 
-
-               // Convert ArrayBuffer to base64
-                const uint8Array = new Uint8Array(pdfData);
-                const base64String = base64js.fromByteArray(uint8Array);
-                const base64Url = `data:application/pdf;base64,${base64String}`;
-
-                console.log("Dashboard.tsx: PDF data converted to base64 URL:", base64Url.substring(0, 50) + "...");
-                setPdfURL(base64Url);
+                if (data && data.pdfUrl) {
+                    console.log("Dashboard.tsx: PDF URL received:", data.pdfUrl);
+                    setPdfURL(data.pdfUrl);
+                } else {
+                     console.warn("Dashboard.tsx: pdfUrl not found in API response");
+                     throw new Error("PDF URL not found in the response from the server.");
+                }
 
             } catch (error: any) {
-                console.error('Dashboard.tsx: Failed to fetch PDF data:', error);
-                setPdfError(`Failed to fetch PDF data: ${error.message || 'Unknown error'}`);
+                console.error('Dashboard.tsx: Failed to fetch PDF URL:', error);
+                setPdfUrlError(`Failed to retrieve brief link: ${error.message || 'Unknown error'}`);
             } finally {
-                console.log("Dashboard.tsx: fetchPdfData completed (loading=false)");
-                setPdfLoading(false);
+                console.log("Dashboard.tsx: fetchPdfDownloadUrl completed (loading=false)");
+                setPdfUrlLoading(false);
             }
         };
 
-        fetchPdfData();
+        fetchPdfDownloadUrl();
     }, []);
 
-    useEffect(() => {
-        console.log("Dashboard.tsx: pdfURL state updated:", pdfURL?.substring(0, 50) + "...");  // Track pdfURL changes
-    }, [pdfURL]);
-
-
-    useEffect(() => {
-        if (pdfError) {
-            console.error("Dashboard.tsx: PDF Error state:", pdfError);
-        }
-    }, [pdfError]);
-
     // --- Handlers ---
+    const handleDownloadClick = () => {
+        if (!pdfURL) {
+            console.error("Download attempt failed: No PDF URL available.");
+            // Optionally show an alert to the user
+            // alert("Could not download the brief. Please try again later.");
+            return;
+        }
+
+        console.log("Triggering download for:", pdfURL);
+        // Create a temporary link element
+        const link = document.createElement('a');
+        link.href = pdfURL;
+        link.setAttribute('download', 'crypto_brief.pdf'); // Suggests a filename to the browser
+        // Optional: For cross-origin downloads, you might need these, but test without first
+        // link.setAttribute('target', '_blank');
+        // link.setAttribute('rel', 'noopener noreferrer');
+
+        // Append to the document, click, and remove
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+
     const handleUpgradeClick = () => {
         setIsAccountPopupOpen(false);
         onNavigateToUpgrade();
@@ -165,35 +168,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
         console.log("Saving Telegram ID:", telegramIdInput);
         setTelegramModalOpen(false);
     }
-
-    const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
-        setNumPages(numPages);
-    };
-
-    const onDocumentLoadError = (error: any) => {
-        console.error("Error loading PDF:", error);
-        setPdfError("Failed to load PDF from URL.  Ensure the URL is correct and the PDF is valid.");
-        setPdfLoading(false);  // Ensure loading is stopped
-    };
-
-     const goToPrevPage = () => {
-         if (pageNumber > 1) {
-            setPageNumber(pageNumber - 1);
-         }
-     };
-
-     const goToNextPage = () => {
-         if (numPages && pageNumber < numPages) {
-             setPageNumber(pageNumber + 1);
-         }
-     };
-
-     const resetPDFState = useCallback(() => {
-         setNumPages(null);
-         setPageNumber(1);
-         setPdfLoading(true);
-         setPdfError(null);
-     }, []);
 
     // --- Render ---
     return (
@@ -302,77 +276,61 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
 
                 {/* Dashboard Content */}
-                <div className="bg-white dark:bg-gray-800 rounded-lg p-8 text-center shadow-lg">
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-8 text-center shadow-lg flex flex-col items-center">
                     <h2 className="text-2xl font-bold mb-4">Welcome back, {googleUser?.given_name ?? 'User'}!</h2>
-                     <p className="text-gray-600 dark:text-gray-400 mb-6">
-                         Here's your personalized crypto brief based on your preferences.
+                     <p className="text-gray-600 dark:text-gray-400 mb-8">
+                         Your personalized crypto brief is ready for download.
                      </p>
 
-                     {/* PDF Viewer Section */}
-                     <div className="border dark:border-gray-700 rounded-lg overflow-hidden shadow-md">
-                         {pdfLoading && (
-                             <div className="flex items-center justify-center h-64 text-gray-600 dark:text-gray-400">
-                                 Loading PDF...
+                     {/* Download Section */}
+                     <div className="w-full max-w-sm p-6 border dark:border-gray-700 rounded-lg shadow-md flex flex-col items-center space-y-4 bg-gray-50 dark:bg-gray-800">
+                        {pdfUrlLoading && (
+                             <div className="flex flex-col items-center text-gray-600 dark:text-gray-400">
+                                 <LoaderIcon className="w-8 h-8 animate-spin mb-2 text-purple-500" />
+                                 <span>Preparing your brief...</span>
                              </div>
                          )}
-                         {pdfError && (
-                             <div className="flex items-center justify-center h-64 text-red-600 dark:text-red-400">
-                                 {pdfError}
+                         {pdfUrlError && !pdfUrlLoading && (
+                             <div className="flex flex-col items-center text-red-600 dark:text-red-400 text-center">
+                                 <AlertCircle className="w-8 h-8 mb-2" />
+                                 <span>Error preparing brief:</span>
+                                 <span className="text-sm">{pdfUrlError}</span>
                              </div>
                          )}
-                         {!pdfLoading && !pdfError && pdfURL && (
+                         {!pdfUrlLoading && !pdfUrlError && pdfURL && (
                              <>
-                                 {console.log("Dashboard.tsx: Rendering PDF with pdfURL (base64):", pdfURL.substring(0, 50) + "...")}
-                                 <Document
-                                     file={pdfURL}
-                                     onLoadSuccess={onDocumentLoadSuccess}
-                                     onLoadError={onDocumentLoadError}
-                                     loading={<div className="text-center">Fetching PDF...</div>}
-                                     error={<div className="text-center text-red-500">Error loading PDF</div>}
-                                 >
-                                     <Page pageNumber={pageNumber} renderTextLayer={false} renderAnnotationLayer={false} width={700}/>
-                                 </Document>
-                                 <div className="flex justify-between items-center px-4 py-2 bg-gray-100 dark:bg-gray-700">
-                                     <button
-                                         onClick={goToPrevPage}
-                                         disabled={pageNumber <= 1}
-                                         className="px-3 py-1 rounded-md bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                                     >
-                                         Previous
-                                     </button>
-                                     <span className="text-sm text-gray-600 dark:text-gray-400">
-                                         Page {pageNumber} of {numPages}
-                                     </span>
-                                     <button
-                                         onClick={goToNextPage}
-                                         disabled={!numPages || pageNumber >= numPages}
-                                         className="px-3 py-1 rounded-md bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                                     >
-                                         Next
-                                     </button>
-                                 </div>
+                                <FilePdf className="w-16 h-16 text-purple-500 dark:text-purple-400 mb-4" />
+                                <button
+                                    onClick={handleDownloadClick}
+                                    disabled={!pdfURL} // Should always be enabled here, but good practice
+                                    className="inline-flex items-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-lg shadow-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <Download className="w-5 h-5" />
+                                    <span>Download Your Brief</span>
+                                </button>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Filename: crypto_brief.pdf</p>
                              </>
                          )}
                      </div>
 
+
                      {/* Display Preferences from Prop */}
                      {initialPreferences ? (
-                         <div className="text-left text-sm text-gray-600 dark:text-gray-400 border-t dark:border-gray-700 pt-4 mt-4">
-                             <h4 className="font-semibold mb-2 text-gray-700 dark:text-gray-300">Your Current Preferences:</h4>
+                         <div className="text-left text-sm text-gray-600 dark:text-gray-400 border-t dark:border-gray-700 pt-6 mt-8 w-full max-w-sm">
+                             <h4 className="font-semibold mb-2 text-gray-700 dark:text-gray-300">Brief Based On:</h4>
                              <p><strong>Sectors:</strong> {initialPreferences.selectedSectors.length > 0 ? initialPreferences.selectedSectors.join(', ') : <i className="text-gray-400 dark:text-gray-500">None selected</i>}</p>
                              <p><strong>Narratives:</strong> {initialPreferences.selectedNarratives.length > 0 ? initialPreferences.selectedNarratives.join(', ') : <i className="text-gray-400 dark:text-gray-500">None selected</i>}</p>
                              <p><strong>Watchlist:</strong> {initialPreferences.watchlistItems.length > 0 ? initialPreferences.watchlistItems.join(', ') : <i className="text-gray-400 dark:text-gray-500">None selected</i>}</p>
                          </div>
                      ) : (
-                         <div className="text-left text-sm text-gray-500 dark:text-gray-400 border-t dark:border-gray-700 pt-4 mt-4">
-                            <p>Loading preferences or none set...</p>
+                         <div className="text-left text-sm text-gray-500 dark:text-gray-400 border-t dark:border-gray-700 pt-6 mt-8 w-full max-w-sm">
+                            <p>Loading preferences...</p>
                          </div>
                      )}
                 </div>
             </div>
 
             {/* --- Modals --- */}
-            {/* Email Modal */}
              <Modal isOpen={emailModalOpen} onClose={() => setEmailModalOpen(false)} title="Set Up Email Brief">
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">Enter the email address for your daily brief. (Currently uses your login email)</p>
                 <input
@@ -391,8 +349,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     Save Email
                  </button>
             </Modal>
-
-            {/* Telegram Modal */}
             <Modal isOpen={telegramModalOpen} onClose={() => setTelegramModalOpen(false)} title="Set Up Telegram Brief">
                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">Enter your Telegram User ID to receive briefs.</p>
                  <input
@@ -410,8 +366,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                  </button>
                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">Note: You may need to start a chat with our bot first. <a href="#" className="text-blue-500 hover:underline">Find bot (link coming soon)</a></p>
              </Modal>
-
-             {/* X (Twitter) Modal */}
              <Modal isOpen={twitterModalOpen} onClose={() => setTwitterModalOpen(false)} title="Follow Our X Feed">
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">Stay updated with our latest insights by following our official X (Twitter) account for real-time news and analysis.</p>
                  <a
