@@ -1,19 +1,19 @@
-// api/pdf-brief.js
-const axios = require('axios');
+// api/pdf-brief.mjs
+import axios from 'axios'; // Import axios
 
-module.exports = async (req, res) => {
-  console.log("Vercel function /api/pdf-brief called"); // Debug: Function entry
+export default async (req, res) => { // Export the function
+  console.log("Vercel function /api/pdf-brief called");
 
   try {
     const apiKey = process.env.OPENSERV_API_KEY;
-    console.log("API Key:", apiKey ? 'Present' : 'Missing'); // Debug: API key presence
+    console.log("API Key:", apiKey ? 'Present' : 'Missing');
 
     if (!apiKey) {
       console.error("Error: API key not found on the server.");
       return res.status(500).json({ error: "API key not found on the server." });
     }
 
-    console.log("Fetching file list from API...");  // Debug: Before API request
+    console.log("Fetching file list from API...");
 
     const response = await axios.get('https://api.openserv.ai/workspaces/3361/files', {
       headers: {
@@ -22,7 +22,7 @@ module.exports = async (req, res) => {
       }
     });
 
-    console.log("API Response Status:", response.status); // Debug: API status
+    console.log("API Response Status:", response.status);
 
     if (response.status !== 200) {
       console.error("API responded with:", response.status, response.data);
@@ -30,20 +30,20 @@ module.exports = async (req, res) => {
     }
 
     const data = response.data;
-    console.log("API Response Data:", data);  // Debug: Raw API data
+    console.log("API Response Data:", data);
 
     if (data && data.length > 0) {
       const lastFile = data[data.length - 1];
       const pdfUrl = lastFile.fullUrl;
-      console.log("Extracted PDF URL:", pdfUrl);  // Debug: Extracted URL
-      return res.redirect(pdfUrl); // This line is correct
+      console.log("Extracted PDF URL:", pdfUrl);
+      return res.redirect(pdfUrl);
     } else {
       console.warn('No files found in the response.');
       return res.status(404).json({ error: "No PDF file found." });
     }
   } catch (error) {
     console.error('Failed to fetch files:', error);
-    console.error("Error Details:", error.message, error.stack); //More Detailed Error Info
+    console.error("Error Details:", error.message, error.stack);
     return res.status(500).json({ error: `Failed to fetch PDF: ${error.message || 'Unknown error'}` });
   }
 };
