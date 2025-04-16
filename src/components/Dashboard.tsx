@@ -16,7 +16,7 @@ interface FileInfo {
     path: string;
     fullUrl: string;
     summary: string;
-    size": number;
+    size: number;
 }
 
 // --- Modal Component --- (Keep your existing Modal implementation)
