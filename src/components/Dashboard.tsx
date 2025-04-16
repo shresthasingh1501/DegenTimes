@@ -6,6 +6,7 @@ import { GoogleUserProfile } from '../App';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
+import * as base64js from 'base64-js'; // Import base64-js
 
 // --- PDF Viewer Configuration ---
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
@@ -15,7 +16,7 @@ interface FileInfo {
     path: string;
     fullUrl: string;
     summary: string;
-    size: number;
+    size": number;
 }
 
 // --- Modal Component --- (Keep your existing Modal implementation)
@@ -78,7 +79,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const [pageNumber, setPageNumber] = useState(1);
     const [pdfLoading, setPdfLoading] = useState(true);
     const [pdfError, setPdfError] = useState<string | null>(null);
-    const [pdfURL, setPdfURL] = useState<any>(null); // Set type to any
+    const [pdfURL, setPdfURL] = useState<string | null>(null); // Changed to string | null
 
 
     // --- Effects ---
@@ -113,10 +114,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 const pdfData = await response.arrayBuffer();
                 console.log("Dashboard.tsx: PDF data received (ArrayBuffer)");
 
-                // Convert ArrayBuffer to Uint8Array (required by react-pdf)
-                const uint8Array = new Uint8Array(pdfData);
 
-                setPdfURL(uint8Array); //Set as Uint8Array
+               // Convert ArrayBuffer to base64
+                const uint8Array = new Uint8Array(pdfData);
+                const base64String = base64js.fromByteArray(uint8Array);
+                const base64Url = `data:application/pdf;base64,${base64String}`;
+
+                console.log("Dashboard.tsx: PDF data converted to base64 URL:", base64Url.substring(0, 50) + "...");
+                setPdfURL(base64Url);
 
             } catch (error: any) {
                 console.error('Dashboard.tsx: Failed to fetch PDF data:', error);
@@ -131,7 +136,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }, []);
 
     useEffect(() => {
-        console.log("Dashboard.tsx: pdfURL state updated:", pdfURL);  // Track pdfURL changes
+        console.log("Dashboard.tsx: pdfURL state updated:", pdfURL?.substring(0, 50) + "...");  // Track pdfURL changes
     }, [pdfURL]);
 
 
@@ -317,6 +322,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                          )}
                          {!pdfLoading && !pdfError && pdfURL && (
                              <>
+                                 {console.log("Dashboard.tsx: Rendering PDF with pdfURL (base64):", pdfURL.substring(0, 50) + "...")}
                                  <Document
                                      file={pdfURL}
                                      onLoadSuccess={onDocumentLoadSuccess}
