@@ -94,22 +94,29 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     useEffect(() => {
         const fetchPdfUrl = async () => {
+          console.log("Dashboard.tsx: fetchPdfUrl called");  //Debug: function entry
           setPdfLoading(true);
           setPdfError(null);
           try {
+            console.log("Dashboard.tsx: Fetching PDF URL from /api/pdf-brief...");
             const response = await fetch('/api/pdf-brief'); // Call your Vercel function
+
+            console.log("Dashboard.tsx: Response status from /api/pdf-brief:", response.status);
 
             if (!response.ok) {
               const errorData = await response.json();
+              console.error("Dashboard.tsx: Error from /api/pdf-brief:", errorData);
               throw new Error(errorData.error || `HTTP error! Status: ${response.status}`);
             }
 
             const finalUrl = response.url; //Extract URL
+            console.log("Dashboard.tsx: Final URL after redirect:", finalUrl);
             setPdfURL(finalUrl);
           } catch (error: any) {
-            console.error('Failed to fetch PDF URL:', error);
+            console.error('Dashboard.tsx: Failed to fetch PDF URL:', error);
             setPdfError(`Failed to fetch PDF URL: ${error.message || 'Unknown error'}`);
           } finally {
+            console.log("Dashboard.tsx: fetchPdfUrl completed (loading=false)");
             setPdfLoading(false);
           }
         };
@@ -117,7 +124,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
         fetchPdfUrl();
       }, []);
 
+    useEffect(() => {
+      console.log("Dashboard.tsx: pdfURL state updated:", pdfURL);  // Track pdfURL changes
+    }, [pdfURL]);
 
+
+    useEffect(() => {
+        if (pdfError) {
+            console.error("Dashboard.tsx: PDF Error state:", pdfError);
+        }
+    }, [pdfError]);
 
     // --- Handlers ---
     const handleUpgradeClick = () => {
