@@ -1,15 +1,15 @@
 // src/components/Dashboard.tsx
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Mail, Hand as BrandX, GitBranch as BrandTelegram, Settings, LogOut, User, ChevronDown, ArrowUpRight, X as CloseIcon, FilePdf } from 'lucide-react';
-import { UserPreferences } from './OnboardingWizard'; // Use the exported type
-import { GoogleUserProfile } from '../App'; // Assuming App.tsx exports this
+import { UserPreferences } from './OnboardingWizard';
+import { GoogleUserProfile } from '../App';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
-import 'react-pdf/dist/esm/Page/TextLayer.css'; // Import the CSS
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+import 'react-pdf/dist/esm/Page/TextLayer.css';
 
 // --- PDF Viewer Configuration ---
-//const PDF_URL = 'place it here';
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+
 interface FileInfo {
     id: number;
     path: string;
@@ -25,6 +25,7 @@ interface ModalProps {
     title: string;
     children: React.ReactNode;
 }
+
 const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
     if (!isOpen) return null;
     return (
@@ -46,17 +47,17 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
 
 // --- Dashboard Props ---
 interface DashboardProps {
-    onEditPreferences: () => void; // Provided by App.tsx (handles Supabase deletion)
-    initialPreferences: UserPreferences | null; // Provided by App.tsx (sourced from Supabase)
-    onLogout: () => void; // Provided by App.tsx
-    googleUser: GoogleUserProfile | null; // Provided by App.tsx
-    onNavigateToUpgrade: () => void; // Provided by App.tsx
+    onEditPreferences: () => void;
+    initialPreferences: UserPreferences | null;
+    onLogout: () => void;
+    googleUser: GoogleUserProfile | null;
+    onNavigateToUpgrade: () => void;
 }
 
 // --- Dashboard Component ---
 export const Dashboard: React.FC<DashboardProps> = ({
     onEditPreferences,
-    initialPreferences, // Preferences now come directly from App state (Supabase)
+    initialPreferences,
     onLogout,
     googleUser,
     onNavigateToUpgrade,
@@ -67,9 +68,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const [twitterModalOpen, setTwitterModalOpen] = useState(false);
     const [isAccountPopupOpen, setIsAccountPopupOpen] = useState(false);
 
-    // State for modal inputs (could be lifted or handled differently if saving needed)
     const [emailInput, setEmailInput] = useState('');
-    const [telegramIdInput, setTelegramIdInput] = useState(''); // State for Telegram input
+    const [telegramIdInput, setTelegramIdInput] = useState('');
 
     const accountPopupRef = useRef<HTMLDivElement>(null);
 
@@ -82,7 +82,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
 
     // --- Effects ---
-    // Close account popup when clicking outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (accountPopupRef.current && !accountPopupRef.current.contains(event.target as Node)) {
@@ -93,82 +92,61 @@ export const Dashboard: React.FC<DashboardProps> = ({
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-
     useEffect(() => {
-        const fetchFiles = async () => {
-            try {
-                const apiKey = import.meta.env.VITE_OPENSERV_API_KEY;  // Access Vite environment variable
+        const fetchPdfUrl = async () => {
+          setPdfLoading(true);
+          setPdfError(null);
+          try {
+            const response = await fetch('/api/pdf-brief'); // Call your Vercel function
 
-                if (!apiKey) {
-                    console.error("API key not found in environment variables.");
-                    setPdfError("API key not found. Please configure your environment variables.");
-                    setPdfLoading(false);
-                    return; // Exit the function if the API key is missing
-                }
-
-                const response = await fetch('https://api.openserv.ai/workspaces/3361/files', {
-                    headers: {
-                        'accept': 'application/json',
-                        'x-openserv-key': apiKey
-                    }
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error! Status: ${response.status}`);
-                }
-
-                const data: FileInfo[] = await response.json();
-
-                if (data && data.length > 0) {
-                    const lastFile = data[data.length - 1];
-                    setPdfURL(lastFile.fullUrl);
-                } else {
-                    console.warn('No files found in the response.');
-                    setPdfError("No PDF file found."); // Set error state if no files
-                    setPdfLoading(false);
-                }
-            } catch (error) {
-                console.error('Failed to fetch files:', error);
-                setPdfError("Failed to fetch PDF. Please check your network connection or API key."); // Set error state on fetch failure
-                setPdfLoading(false);
+            if (!response.ok) {
+              const errorData = await response.json();
+              throw new Error(errorData.error || `HTTP error! Status: ${response.status}`);
             }
+
+            const finalUrl = response.url; //Extract URL
+            setPdfURL(finalUrl);
+          } catch (error: any) {
+            console.error('Failed to fetch PDF URL:', error);
+            setPdfError(`Failed to fetch PDF URL: ${error.message || 'Unknown error'}`);
+          } finally {
+            setPdfLoading(false);
+          }
         };
 
-        fetchFiles();
-    }, []);
+        fetchPdfUrl();
+      }, []);
+
+
 
     // --- Handlers ---
     const handleUpgradeClick = () => {
         setIsAccountPopupOpen(false);
-        onNavigateToUpgrade(); // Navigate via App.tsx
+        onNavigateToUpgrade();
     };
 
     const handleLogoutClick = () => {
         setIsAccountPopupOpen(false);
-        onLogout(); // Logout via App.tsx
+        onLogout();
     };
 
-    // Placeholder save handlers for modals (implement actual saving logic if needed)
     const handleSaveEmail = () => {
         console.log("Saving Email:", emailInput);
-        // TODO: Implement actual save logic (e.g., API call, Supabase update)
         setEmailModalOpen(false);
     }
     const handleSaveTelegramId = () => {
         console.log("Saving Telegram ID:", telegramIdInput);
-        // TODO: Implement actual save logic
         setTelegramModalOpen(false);
     }
 
     const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
         setNumPages(numPages);
-        setPdfLoading(false);
     };
 
     const onDocumentLoadError = (error: any) => {
         console.error("Error loading PDF:", error);
-        setPdfLoading(false);
-        setPdfError("Failed to load PDF. Please try again later.");
+        setPdfError("Failed to load PDF from URL.  Ensure the URL is correct and the PDF is valid.");
+        setPdfLoading(false);  // Ensure loading is stopped
     };
 
      const goToPrevPage = () => {
@@ -206,14 +184,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                              <span>Email Brief</span>
                          </button>
                          <button
-                             onClick={() => setTelegramModalOpen(true)} // Enable button
+                             onClick={() => setTelegramModalOpen(true)}
                              className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow-md transition-shadow text-gray-700 dark:text-gray-300"
                          >
                              <BrandTelegram className="w-5 h-5" />
                              <span>Telegram Brief</span>
                          </button>
                          <button
-                             onClick={() => setTwitterModalOpen(true)} // Enable button
+                             onClick={() => setTwitterModalOpen(true)}
                              className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow-md transition-shadow text-gray-700 dark:text-gray-300"
                          >
                              <BrandX className="w-5 h-5" />
@@ -224,7 +202,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     {/* Right Buttons (Settings, Account) */}
                     <div className="flex flex-wrap items-center gap-4">
                         <button
-                            onClick={onEditPreferences} // Calls App.tsx handler (Supabase delete)
+                            onClick={onEditPreferences}
                             className="flex items-center gap-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg shadow-sm hover:shadow-md transition-shadow text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
                             title="Edit Preferences"
                         >
@@ -315,7 +293,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                  {pdfError}
                              </div>
                          )}
-                         {!pdfLoading && !pdfError && pdfURL && ( // Conditionally render the PDF viewer
+                         {!pdfLoading && !pdfError && pdfURL && (
                              <>
                                  <Document
                                      file={pdfURL}
@@ -360,7 +338,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                      ) : (
                          <div className="text-left text-sm text-gray-500 dark:text-gray-400 border-t dark:border-gray-700 pt-4 mt-4">
                             <p>Loading preferences or none set...</p>
-                            {/* Optionally add a button to trigger onEditPreferences if null */}
                          </div>
                      )}
                 </div>
@@ -370,18 +347,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
             {/* Email Modal */}
              <Modal isOpen={emailModalOpen} onClose={() => setEmailModalOpen(false)} title="Set Up Email Brief">
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">Enter the email address for your daily brief. (Currently uses your login email)</p>
-                {/* Consider making this read-only or just informational if tied to login email */}
                 <input
                     type="email"
-                    value={googleUser?.email ?? emailInput} // Show Google email if available
+                    value={googleUser?.email ?? emailInput}
                     onChange={(e) => setEmailInput(e.target.value)}
                     placeholder="your.email@example.com"
-                    readOnly={!!googleUser?.email} // Make read-only if using Google email
+                    readOnly={!!googleUser?.email}
                     className="w-full px-3 py-2 rounded border dark:border-gray-600 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500 mb-4 read-only:bg-gray-100 dark:read-only:bg-gray-600"
                 />
                 <button
                     onClick={handleSaveEmail}
-                    disabled={!!googleUser?.email} // Disable if using Google email
+                    disabled={!!googleUser?.email}
                     className="w-full px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
                  >
                     Save Email
@@ -400,8 +376,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                  />
                  <button
                     onClick={handleSaveTelegramId}
-                    // Add disabled logic if needed (e.g., !telegramIdInput.trim())
-                    className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600" // Telegram blue
+                    className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
                  >
                     Save Telegram ID
                  </button>
@@ -412,7 +387,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
              <Modal isOpen={twitterModalOpen} onClose={() => setTwitterModalOpen(false)} title="Follow Our X Feed">
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">Stay updated with our latest insights by following our official X (Twitter) account for real-time news and analysis.</p>
                  <a
-                    href="https://x.com/shresthasi58548" // <-- REPLACE with your actual X handle URL
+                    href="https://x.com/shresthasi58548"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="w-full block text-center px-4 py-2 bg-gray-800 dark:bg-gray-200 text-white dark:text-black rounded hover:opacity-90 transition-opacity font-semibold"
