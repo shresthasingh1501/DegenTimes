@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
     Mail, Hand as BrandX, Send, Settings, LogOut, User, ChevronDown,
     ArrowUpRight, X as CloseIcon, FileText, Download, Loader2 as LoaderIcon,
-    AlertCircle, CheckCircle, Star, Zap, ListChecks, Shapes, Milestone, TrendingUp, ExternalLink, PlusCircle // Added PlusCircle
+    AlertCircle, CheckCircle, Star, Zap, ListChecks, Shapes, Milestone, TrendingUp, ExternalLink, PlusCircle, DownloadCloud
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
@@ -14,29 +14,24 @@ import ReactDOM from 'react-dom';
 import { UserPreferences } from './OnboardingWizard';
 import { GoogleUserProfile } from '../App';
 
+// Extend NotificationType if needed, or use it from App if exported
+type NotificationType = 'success' | 'error' | 'info';
+
 // Modal Component
 interface ModalProps {
     isOpen: boolean;
     onClose: () => void;
     title: string;
     children: React.ReactNode;
-    size?: 'sm' | 'md' | 'lg'; // Added size prop
+    size?: 'sm' | 'md' | 'lg';
 }
 const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, size = 'md' }) => {
     if (!isOpen) return null;
-
-    const sizeClasses = {
-        sm: 'max-w-sm',
-        md: 'max-w-md',
-        lg: 'max-w-lg',
-    };
-
+    const sizeClasses = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-lg' };
     return (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full ${sizeClasses[size]} relative`}>
-                 <button onClick={onClose} className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" aria-label="Close modal">
-                     <CloseIcon size={20} />
-                 </button>
+                 <button onClick={onClose} className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" aria-label="Close modal"> <CloseIcon size={20} /> </button>
                 <h3 className="text-lg font-semibold p-4 border-b dark:border-gray-700">{title}</h3>
                 <div className="p-4">{children}</div>
             </div>
@@ -53,12 +48,13 @@ interface DashboardProps {
     onNavigateToUpgrade: () => void;
     telegramId: string | null;
     teleUpdateRate: number | null;
-    onSaveTelegramDetails: (telegramId: string | null, teleUpdateRate: number | null) => Promise<void>;
+    onSaveTelegramDetails: (telegramId: string | null, teleUpdateRate: number | null) => Promise<void>; // Expects promise from App
     isPro: boolean;
     isEnterprise: boolean;
     watchlistNews: string | null;
     sectorNews: string | null;
     narrativeNews: string | null;
+    showAppNotification: (message: string, type?: NotificationType, duration?: number) => void; // Receive notification function
 }
 
 // Helper function to determine tier
@@ -101,6 +97,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     watchlistNews,
     sectorNews,
     narrativeNews,
+    showAppNotification // Destructure notification function
 }) => {
     // State
     const [emailModalOpen, setEmailModalOpen] = useState(false);
@@ -115,9 +112,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const [isSavingTelegram, setIsSavingTelegram] = useState<boolean>(false);
     const [telegramSaveError, setTelegramSaveError] = useState<string | null>(null);
     const [emailInput, setEmailInput] = useState('');
-    const [showSuccessNotification, setShowSuccessNotification] = useState<boolean>(false);
-    const [successMessage, setSuccessMessage] = useState<string>('');
-    const notificationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    // Removed dashboard-specific notification state, using App's now
     const accountPopupRef = useRef<HTMLDivElement>(null);
     const [activeNewsTab, setActiveNewsTab] = useState<NewsTab>('watchlist');
     const [trendingData, setTrendingData] = useState<TrendingData | null>(null);
@@ -127,7 +122,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const [requestTitle, setRequestTitle] = useState('');
     const [requestContents, setRequestContents] = useState('');
     const [isRequesting, setIsRequesting] = useState(false);
-
 
     // Determine tier info
     const tier = getTierInfo(isPro, isEnterprise);
@@ -168,9 +162,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         };
         fetchPdfDownloadUrl();
     }, []);
-    useEffect(() => {
-        return () => { if (notificationTimeoutRef.current) clearTimeout(notificationTimeoutRef.current); };
-    }, []);
+
 
     useEffect(() => {
         if (activeNewsTab === 'trending' && !trendingData && !trendingLoading) {
@@ -216,23 +208,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
         setTeleRateInput(teleUpdateRate ?? 24);
         setTelegramModalOpen(true);
     };
+
+    // Updated: Call App's save function which handles notifications
     const handleSaveTelegramDetails = async () => {
         setIsSavingTelegram(true);
         setTelegramSaveError(null);
-        if (notificationTimeoutRef.current) { clearTimeout(notificationTimeoutRef.current); notificationTimeoutRef.current = null; }
         try {
             const rateToSave = Math.max(1, Math.min(24, teleRateInput));
-            await onSaveTelegramDetails(telegramIdInput.trim(), rateToSave);
-            setTelegramModalOpen(false);
-            setSuccessMessage("Telegram settings updated successfully!");
-            setShowSuccessNotification(true);
-            notificationTimeoutRef.current = setTimeout(() => { setShowSuccessNotification(false); notificationTimeoutRef.current = null; }, 3000);
+            await onSaveTelegramDetails(telegramIdInput.trim(), rateToSave); // Calls App's function
+            setTelegramModalOpen(false); // Close modal on success (handled by App notification)
         } catch (error: any) {
-            setTelegramSaveError(`Failed to save: ${error.message || 'Unknown error'}`);
+             // Error notification is handled by App's saveTelegramDetails
+             setTelegramSaveError(`Failed to save: ${error.message || 'Unknown error'}`); // Still show error in modal
         } finally {
             setIsSavingTelegram(false);
         }
     };
+
 
     const handleOpenRequestModal = () => {
         setRequestTitle('');
@@ -245,15 +237,66 @@ export const Dashboard: React.FC<DashboardProps> = ({
         if (!requestTitle.trim() || !requestContents.trim() || isRequesting) return;
         setIsRequesting(true);
         console.log('Submitting request:', { title: requestTitle, contents: requestContents });
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate async
         setIsRequesting(false);
         setIsRequestModalOpen(false);
-        // Show success notification
-        if (notificationTimeoutRef.current) clearTimeout(notificationTimeoutRef.current);
-        setSuccessMessage("Personalized tab request submitted!");
-        setShowSuccessNotification(true);
-        notificationTimeoutRef.current = setTimeout(() => { setShowSuccessNotification(false); notificationTimeoutRef.current = null; }, 3000);
+        showAppNotification("Personalized tab request submitted!", 'success'); // Use App's notification
+    };
+
+    const combinePersonalizedNewsMarkdown = (): string => {
+        let combined = `# Personalized News Brief\n\n`;
+        if (watchlistNews) combined += `## Watchlist News\n\n${watchlistNews}\n\n---\n\n`;
+        if (sectorNews) combined += `## Sector News\n\n${sectorNews}\n\n---\n\n`;
+        if (narrativeNews) combined += `## Narrative News\n\n${narrativeNews}\n\n`;
+        if (!watchlistNews && !sectorNews && !narrativeNews) combined += `*No personalized news available.*\n`;
+        return combined.trim();
+    };
+
+    const handleDownloadPersonalizedBrief = async () => {
+        const markdownContent = combinePersonalizedNewsMarkdown();
+        const pdfRenderContainerId = 'pdf-render-container';
+        let pdfContainer = document.getElementById(pdfRenderContainerId);
+        if (!pdfContainer) {
+            pdfContainer = document.createElement('div');
+            pdfContainer.id = pdfRenderContainerId;
+            document.body.appendChild(pdfContainer);
+        }
+
+        const markdownElement = (
+            <div className="prose prose-sm max-w-none p-10">
+                <ReactMarkdown rehypePlugins={[rehypeRaw]}>
+                    {markdownContent}
+                </ReactMarkdown>
+            </div>
+        );
+
+        ReactDOM.render(markdownElement, pdfContainer, async () => {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const pdf = new jsPDF('p', 'pt', 'a4');
+            const targetElement = document.getElementById(pdfRenderContainerId);
+            if (targetElement) {
+                 try {
+                    await pdf.html(targetElement, {
+                         callback: function (doc) {
+                             doc.save('personalized_news_brief.pdf');
+                             ReactDOM.unmountComponentAtNode(targetElement);
+                             targetElement.remove();
+                         },
+                         x: 0, y: 0,
+                         windowWidth: targetElement.scrollWidth,
+                         // autoPaging: 'text' // consider if needed
+                     });
+                 } catch (error) {
+                     console.error("Error generating personalized PDF:", error);
+                     showAppNotification("Failed to generate personalized brief PDF.", 'error'); // Use app notification
+                      ReactDOM.unmountComponentAtNode(targetElement);
+                      targetElement.remove();
+                 }
+            } else {
+                 console.error("PDF render container not found after creation.");
+                 showAppNotification("Failed to generate PDF: Render container missing.", 'error');
+            }
+        });
     };
 
 
@@ -347,15 +390,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     // Render
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 sm:p-8 text-gray-900 dark:text-white">
-            {showSuccessNotification && (
-                <div className="fixed top-5 left-1/2 transform -translate-x-1/2 z-[60] bg-green-100 dark:bg-green-900 border border-green-400 dark:border-green-600 text-green-700 dark:text-green-200 px-4 py-3 rounded-md shadow-lg flex items-center gap-3" role="alert">
-                    <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
-                    <span className="block sm:inline">{successMessage}</span>
-                    <button onClick={() => setShowSuccessNotification(false)} className="absolute top-1 right-1 text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-200" aria-label="Close notification">
-                        <CloseIcon size={16} />
-                    </button>
-                </div>
-            )}
+            {/* App-level notification is handled in App.tsx */}
 
             <div className="max-w-7xl mx-auto">
                 {/* Header Row */}
@@ -425,7 +460,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     {showProFeatures && (
                         <div className="w-full max-w-5xl mt-8 pt-8 border-t border-gray-200 dark:border-gray-700">
                             <h3 className="text-xl font-semibold mb-4 text-center text-gray-800 dark:text-gray-200">
-                                Your Personalized News Brief
+                                Your Personalized News Feed
                             </h3>
                             {/* Tab Buttons Container */}
                             <div className="flex flex-wrap sm:flex-nowrap border-b border-gray-300 dark:border-gray-600 mb-0" role="tablist">
@@ -446,11 +481,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                     <TrendingUp size={16} /> Trending
                                 </button>
                                  {/* Request Tab Button */}
-                                <button
-                                    onClick={handleOpenRequestModal}
-                                    title="Request Personalized Tab"
-                                    className="flex items-center justify-center sm:justify-start gap-2 px-3 py-3 sm:px-4 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-500 focus:outline-none transition-colors duration-150 ml-auto" // Aligns to the right
-                                >
+                                <button onClick={handleOpenRequestModal} title="Request Personalized Tab" className="flex items-center justify-center sm:justify-start gap-2 px-3 py-3 sm:px-4 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-500 focus:outline-none transition-colors duration-150 ml-auto" >
                                     <PlusCircle size={16} />
                                     <span className="hidden md:inline">Request Tab</span>
                                 </button>
@@ -520,7 +551,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 isOpen={isRequestModalOpen}
                 onClose={() => setIsRequestModalOpen(false)}
                 title="Request Personalized Tab"
-                size="lg" // Make it slightly larger
+                size="lg"
             >
                 <div className="space-y-4">
                     <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -551,7 +582,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             onChange={(e) => setRequestContents(e.target.value)}
                             placeholder="Describe the data or insights you'd like this tab to show..."
                             disabled={isRequesting}
-                            className="w-full px-3 py-2 rounded border dark:border-gray-600 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:bg-gray-100 dark:disabled:bg-gray-600 resize-y" // Allow vertical resize
+                            className="w-full px-3 py-2 rounded border dark:border-gray-600 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:bg-gray-100 dark:disabled:bg-gray-600 resize-y"
                         />
                     </div>
 
