@@ -15,7 +15,7 @@ export default async (req, res) => {
 
     console.log("Fetching file list from API..."); // Debug: Before API request
 
-    const response = await axios.get('https://api.openserv.ai/workspaces/3361/files', {
+    const response = await axios.get('https://api.openserv.ai/workspaces/3414/files', {
       headers: {
         'accept': 'application/json',
         'x-openserv-key': apiKey
