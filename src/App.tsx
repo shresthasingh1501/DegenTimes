@@ -1,5 +1,7 @@
-import React, { useState, useEffect, Suspense, useCallback } from 'react';
-import { Moon, Sun } from 'lucide-react';
+// src/App.tsx
+
+import React, { useState, useEffect, Suspense, useCallback, useRef } from 'react';
+import { Moon, Sun, X as CloseIcon, CheckCircle, AlertCircle } from 'lucide-react'; // Added notification icons
 import { useAuthStore } from './store/auth';
 import { OnboardingWizard } from './components/OnboardingWizard';
 import { Dashboard } from './components/Dashboard';
@@ -7,6 +9,7 @@ import { Background3D } from './components/Background3D';
 import { UpgradePage } from './components/UpgradePage';
 import { useGoogleLogin, googleLogout } from '@react-oauth/google';
 import axios from 'axios';
+import clsx from 'clsx'; // For notification styling
 import { supabase, SupabaseUserData, UserPreferences } from './supabaseClient';
 
 export interface GoogleUserProfile {
@@ -21,6 +24,7 @@ export interface GoogleUserProfile {
 }
 
 type CurrentPage = 'landing' | 'onboarding' | 'dashboard' | 'upgrade' | 'loading' | 'error';
+type NotificationType = 'success' | 'error' | 'info';
 
 const Background = React.memo(() => (
     <Suspense fallback={<div className="fixed inset-0 bg-gradient-to-br from-gray-700 to-gray-900 -z-20"></div>}>
@@ -30,6 +34,43 @@ const Background = React.memo(() => (
 Background.displayName = 'MemoizedBackground';
 
 const VALID_REDEEM_CODE = "BOUNTY";
+
+// Notification Component (defined outside App for stability)
+interface AppNotificationProps {
+    message: string;
+    type: NotificationType;
+    onClose: () => void;
+}
+const AppNotification: React.FC<AppNotificationProps> = ({ message, type, onClose }) => {
+    const baseClasses = "fixed top-5 left-1/2 transform -translate-x-1/2 z-[70] px-4 py-3 rounded-md shadow-lg flex items-center gap-3 border";
+    const typeClasses = {
+        success: "bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 text-green-700 dark:text-green-200",
+        error: "bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 text-red-700 dark:text-red-200",
+        info: "bg-blue-100 dark:bg-blue-900 border-blue-400 dark:border-blue-600 text-blue-700 dark:text-blue-200",
+    };
+    const iconClasses = {
+         success: "text-green-600 dark:text-green-400",
+         error: "text-red-600 dark:text-red-400",
+         info: "text-blue-600 dark:text-blue-400",
+    };
+
+    const IconComponent = type === 'success' ? CheckCircle : type === 'error' ? AlertCircle : AlertCircle; // Default to AlertCircle for info too
+
+    return (
+        <div className={clsx(baseClasses, typeClasses[type])} role="alert">
+            <IconComponent className={`w-5 h-5 ${iconClasses[type]}`} />
+            <span className="block sm:inline">{message}</span>
+            <button
+                onClick={onClose}
+                className={`absolute top-1 right-1 ${iconClasses[type]} hover:opacity-75`}
+                aria-label="Close notification"
+            >
+                <CloseIcon size={16} />
+            </button>
+        </div>
+    );
+};
+
 
 function App() {
     const [isDark, setIsDark] = useState(() => {
@@ -51,6 +92,22 @@ function App() {
     const [sectorNews, setSectorNews] = useState<string | null>(null);
     const [narrativeNews, setNarrativeNews] = useState<string | null>(null);
 
+    // App-level Notification State
+    const [appNotification, setAppNotification] = useState<{ message: string; type: NotificationType } | null>(null);
+    const appNotificationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Function to show app-level notifications
+    const showAppNotification = useCallback((message: string, type: NotificationType = 'info', duration: number = 3000) => {
+        if (appNotificationTimeoutRef.current) {
+            clearTimeout(appNotificationTimeoutRef.current);
+        }
+        setAppNotification({ message, type });
+        appNotificationTimeoutRef.current = setTimeout(() => {
+            setAppNotification(null);
+            appNotificationTimeoutRef.current = null;
+        }, duration);
+    }, []);
+
 
     const fetchUserData = useCallback(async (email: string): Promise<Partial<SupabaseUserData> | null> => {
         console.log(`Fetching user data for ${email}...`);
@@ -69,15 +126,13 @@ function App() {
             if (data) {
                 console.log("User data found:", data);
                 let validPreferences: UserPreferences | null = null;
-                // Check if preferences is not null and is an object with keys (not just {})
                 if (data.preferences && typeof data.preferences === 'object' && Object.keys(data.preferences).length > 0) {
                     validPreferences = data.preferences as UserPreferences;
                 } else if (data.preferences) {
-                     // It exists but might be an empty object '{}' which we treat as null/unset for UI logic
                      console.log("Fetched preferences are empty or invalid:", data.preferences);
                 }
                 return {
-                    preferences: validPreferences, // Return null if empty or invalid
+                    preferences: validPreferences,
                     telegramid: data.telegramid ?? null,
                     tele_update_rate: data.tele_update_rate ?? null,
                     ispro: data.ispro ?? false,
@@ -142,38 +197,33 @@ function App() {
 
             setTelegramId(newTelegramId ?? null);
             setTeleUpdateRate(newRate ?? null);
-
+            showAppNotification("Telegram settings updated successfully!", 'success'); // Use app notification
             console.log("Telegram details saved successfully.");
         } catch (error) {
             console.error("Caught error in saveTelegramDetails:", error);
+            showAppNotification(`Failed to save Telegram settings: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error'); // Show error notification
             throw error;
         }
-    }, []);
+    }, [showAppNotification]); // Add dependency
 
-    // --- UPDATED deletePreferences function ---
     const deletePreferences = useCallback(async (email: string): Promise<void> => {
-        // Instead of setting to NULL, set to an empty JSON object '{}'
-        // This satisfies NOT NULL constraints while representing an empty/reset state.
         console.log(`Resetting preferences field for ${email}...`);
         try {
             const { error } = await supabase
                 .from('user_preferences')
-                .update({ preferences: {} }) // Set preferences to empty object
+                .update({ preferences: {} })
                 .eq('user_email', email);
 
             if (error) {
                 console.error('Supabase reset preferences error:', error);
-                // Provide more context if possible from the error object
                 throw new Error(`Supabase reset error: ${error.message}`);
             }
             console.log("Preferences field reset successfully.");
         } catch (error) {
             console.error("Caught error in deletePreferences:", error);
-            throw error; // Re-throw to be handled by the caller
+            throw error;
         }
     }, []);
-    // --- END UPDATED deletePreferences function ---
-
 
     const redeemProCode = useCallback(async (email: string, enteredCode: string): Promise<void> => {
         console.log(`Attempting to redeem code "${enteredCode}" for ${email}`);
@@ -195,13 +245,15 @@ function App() {
             }
 
             setIsProUser(true);
+            showAppNotification("Code redeemed successfully! You now have Pro access.", 'success', 5000); // Use app notification
             console.log("User successfully updated to Pro.");
 
         } catch (error) {
             console.error("Caught error in redeemProCode:", error);
+            // Error is re-thrown, UpgradePage will show message in modal
             throw error;
         }
-    }, []);
+    }, [showAppNotification]); // Add dependency
 
     useEffect(() => {
         console.log("App mounted/page changed. Current state:", currentPage);
@@ -217,6 +269,15 @@ function App() {
         }
     }, [isDark]);
 
+    useEffect(() => {
+        // Clear notification timeout on unmount
+        return () => {
+             if (appNotificationTimeoutRef.current) {
+                 clearTimeout(appNotificationTimeoutRef.current);
+             }
+        };
+    }, []);
+
     const handleLogout = useCallback(() => {
         googleLogout();
         setIsAuthenticated(false);
@@ -231,6 +292,8 @@ function App() {
         setNarrativeNews(null);
         setCurrentPage('landing');
         setErrorMessage(null);
+        setAppNotification(null); // Clear notification on logout
+        if (appNotificationTimeoutRef.current) clearTimeout(appNotificationTimeoutRef.current);
         console.log("User logged out");
     }, [setIsAuthenticated]);
 
@@ -266,21 +329,19 @@ function App() {
             setSectorNews(userData?.sector ?? null);
             setNarrativeNews(userData?.narrative ?? null);
 
-
-            if (userData?.preferences) { // Navigate to dashboard if preferences are not null/empty
+            if (userData?.preferences) {
                 setCurrentPage('dashboard');
             } else {
-                 // If user data doesn't exist at all, create the row first
                  if (!userData) {
                      console.log("No user record found, creating one before onboarding...");
                      await supabase.from('user_preferences').upsert({
                          user_email: user.email,
-                         preferences: {}, // Ensure preferences starts as {} to satisfy NOT NULL
+                         preferences: {},
                          ispro: false,
                          isenterprise: false
                         });
                  }
-                setCurrentPage('onboarding'); // Go to onboarding if no valid prefs found
+                setCurrentPage('onboarding');
             }
 
         } catch (error: any) {
@@ -316,18 +377,46 @@ function App() {
              return;
          }
 
+        const wasAlreadySetup = !!userPreferences; // Check if prefs existed before this save
+
         setCurrentPage('loading');
         setLoadingMessage('Saving your preferences...');
         try {
             await savePreferences(googleUser.email, preferences);
-            setUserPreferences(preferences);
-            setCurrentPage('dashboard');
+            setUserPreferences(preferences); // Update local state
+            setCurrentPage('dashboard'); // Navigate to dashboard
+
+            // Show notification AFTER navigation logic and state update
+            // Use setTimeout to ensure it appears after dashboard mounts if needed, though likely okay here
+            setTimeout(() => {
+                 if (isProUser || isEnterpriseUser) {
+                     if (wasAlreadySetup) {
+                          showAppNotification(
+                              "Preferences updated! Your personalized brief will update within a few hours. Upgrade to Enterprise for instant changes.",
+                              'info',
+                              7000 // Longer duration
+                          );
+                     } else {
+                          showAppNotification(
+                              "Preferences saved! Your first personalized brief will be ready in 15-20 minutes.",
+                              'success',
+                              5000
+                          );
+                     }
+                 } else {
+                     // Basic user message (optional)
+                     showAppNotification("Preferences saved successfully!", 'success');
+                 }
+            }, 100); // Small delay
+
         } catch (error: any) {
             console.error("Error saving preferences during onboarding:", error);
             setErrorMessage(`Failed to save preferences: ${error.message || 'Please try again.'}`);
             setCurrentPage('error');
+            // Optionally show error notification here too
+            showAppNotification(`Failed to save preferences: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
         }
-    }, [googleUser, savePreferences]);
+    }, [googleUser, savePreferences, showAppNotification, isProUser, isEnterpriseUser, userPreferences]); // Added dependencies
 
     const handleResetPreferencesRequest = useCallback(async () => {
         if (!googleUser?.email) {
@@ -340,15 +429,17 @@ function App() {
         setCurrentPage('loading');
         setLoadingMessage('Resetting preferences...');
         try {
-            await deletePreferences(googleUser.email); // This now sets preferences to {}
-            setUserPreferences(null); // Clear local state
-            setCurrentPage('onboarding'); // Go to onboarding
+            await deletePreferences(googleUser.email);
+            setUserPreferences(null);
+            setCurrentPage('onboarding');
+            showAppNotification("Preferences reset. Please set your new preferences.", 'info'); // Inform user
         } catch (error: any) {
-             console.error("Error resetting preferences:", error); // Changed log prefix
+             console.error("Error resetting preferences:", error);
              setErrorMessage(`Failed to reset preferences: ${error.message || 'Please try again.'}`);
              setCurrentPage('error');
+             showAppNotification(`Failed to reset preferences: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
         }
-    }, [googleUser, deletePreferences]);
+    }, [googleUser, deletePreferences, showAppNotification]); // Added dependency
 
     const showUpgradePage = useCallback(() => setCurrentPage('upgrade'), []);
     const showDashboard = useCallback(() => {
@@ -387,20 +478,13 @@ function App() {
                  );
             case 'onboarding':
                 if (!isAuthenticated || !googleUser) {
-                    console.warn("Attempted to show onboarding while not authenticated.");
-                    handleLogout();
-                    return null;
+                    handleLogout(); return null;
                 }
                 const isSavingPrefs = currentPage === 'loading' && loadingMessage.includes('Saving');
-                return <OnboardingWizard
-                            onComplete={handleOnboardingComplete}
-                            isSaving={isSavingPrefs}
-                       />;
+                return <OnboardingWizard onComplete={handleOnboardingComplete} isSaving={isSavingPrefs} />;
             case 'dashboard':
                  if (!isAuthenticated || !googleUser) {
-                     console.warn("Attempted to show dashboard while not authenticated.");
-                     handleLogout();
-                     return null;
+                     handleLogout(); return null;
                  }
                 return (
                     <>
@@ -413,33 +497,26 @@ function App() {
                             onNavigateToUpgrade={showUpgradePage}
                             telegramId={telegramId}
                             teleUpdateRate={teleUpdateRate}
-                            onSaveTelegramDetails={async (id, rate) => {
-                                if (googleUser?.email) {
-                                   await saveTelegramDetails(googleUser.email, id, rate);
-                                } else {
-                                    console.error("Dashboard: Cannot save Telegram details, user email missing.");
-                                    throw new Error("User email not available.");
-                                }
-                            }}
+                            onSaveTelegramDetails={saveTelegramDetails} // Pass the app-level function
                             isPro={isProUser}
                             isEnterprise={isEnterpriseUser}
                             watchlistNews={watchlistNews}
                             sectorNews={sectorNews}
                             narrativeNews={narrativeNews}
+                            showAppNotification={showAppNotification} // Pass notification function
                         />
                     </>
                 );
              case 'upgrade':
                  if (!isAuthenticated || !googleUser) {
-                     console.warn("Attempted to show upgrade page while not authenticated.");
-                     handleLogout();
-                     return null;
+                     handleLogout(); return null;
                  }
                  return (
                      <UpgradePage
                          onGoBack={showDashboard}
                          userEmail={googleUser.email}
                          onRedeemCode={redeemProCode}
+                         showAppNotification={showAppNotification} // Pass notification function
                      />
                  );
             case 'landing':
@@ -452,45 +529,23 @@ function App() {
                              <header className="container mx-auto px-4 py-6 relative z-10">
                                  <div className="flex justify-between items-center">
                                      <h1 className="font-chomsky text-4xl">Degen Times</h1>
-                                     <button
-                                         onClick={() => setIsDark(!isDark)}
-                                         className="p-2 rounded-full hover:bg-black/10 dark:hover:bg-white/10"
-                                         title="Toggle Theme"
-                                     >
+                                     <button onClick={() => setIsDark(!isDark)} className="p-2 rounded-full hover:bg-black/10 dark:hover:bg-white/10" title="Toggle Theme">
                                          {isDark ? <Sun className="w-6 h-6" /> : <Moon className="w-6 h-6" />}
                                      </button>
                                  </div>
                              </header>
                              <main className="container mx-auto px-4 py-16 md:py-24 relative z-10">
                                  <div className="max-w-4xl mx-auto text-center backdrop-blur-lg bg-white/30 dark:bg-gray-900/40 p-8 rounded-2xl shadow-xl">
-                                     <h2 className="text-4xl md:text-6xl font-bold mb-6 leading-tight">
-                                         Stop Drowning in Crypto Noise.
-                                         <span className="block bg-gradient-to-r from-purple-500 to-pink-500 bg-clip-text text-transparent">
-                                             Get Your Personalized Signal Brief.
-                                         </span>
-                                     </h2>
-                                     <p className="text-xl md:text-2xl mb-12 text-gray-800 dark:text-gray-200">
-                                         We filter data from 100s of sources – news, X (Twitter), Telegram, on-chain activity, smart wallets – delivering only what matters to you, every day.
-                                     </p>
-                                     <button
-                                         onClick={() => login()}
-                                         disabled={currentPage === 'loading'}
-                                         className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border border-gray-300 dark:border-gray-700 hover:bg-white dark:hover:bg-gray-800 text-gray-800 dark:text-white px-8 py-4 rounded-lg text-lg font-semibold flex items-center gap-3 mx-auto shadow-md hover:shadow-lg transition-shadow disabled:opacity-60 disabled:cursor-not-allowed"
-                                     >
+                                     <h2 className="text-4xl md:text-6xl font-bold mb-6 leading-tight"> Stop Drowning in Crypto Noise. <span className="block bg-gradient-to-r from-purple-500 to-pink-500 bg-clip-text text-transparent"> Get Your Personalized Signal Brief. </span> </h2>
+                                     <p className="text-xl md:text-2xl mb-12 text-gray-800 dark:text-gray-200"> We filter data from 100s of sources – news, X (Twitter), Telegram, on-chain activity, smart wallets – delivering only what matters to you, every day. </p>
+                                     <button onClick={() => login()} disabled={currentPage === 'loading'} className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border border-gray-300 dark:border-gray-700 hover:bg-white dark:hover:bg-gray-800 text-gray-800 dark:text-white px-8 py-4 rounded-lg text-lg font-semibold flex items-center gap-3 mx-auto shadow-md hover:shadow-lg transition-shadow disabled:opacity-60 disabled:cursor-not-allowed" >
                                          <img src="https://www.google.com/favicon.ico" alt="Google" className="w-6 h-6" />
                                          {currentPage === 'loading' ? 'Connecting...' : 'Continue with Google'}
                                      </button>
                                  </div>
                                  <div className="grid md:grid-cols-3 gap-8 mt-24">
-                                      {[
-                                          { title: 'Personalized', description: 'Tailored insights based on your interests, portfolio, and trading style.' },
-                                          { title: 'Comprehensive', description: 'Data from hundreds of sources, filtered and analyzed for relevance.' },
-                                          { title: 'Data-Driven', description: 'On-chain analytics, market sentiment, and smart money movements.' }
-                                      ].map((feature, index) => (
-                                          <div key={index} className="backdrop-blur-lg bg-white/30 dark:bg-gray-900/40 p-6 rounded-lg border border-white/20 shadow-lg">
-                                              <h3 className="text-xl font-semibold mb-3">{feature.title}</h3>
-                                              <p className="text-gray-800 dark:text-gray-200">{feature.description}</p>
-                                          </div>
+                                      {[ { title: 'Personalized', description: 'Tailored insights based on your interests, portfolio, and trading style.' }, { title: 'Comprehensive', description: 'Data from hundreds of sources, filtered and analyzed for relevance.' }, { title: 'Data-Driven', description: 'On-chain analytics, market sentiment, and smart money movements.' } ].map((feature, index) => (
+                                          <div key={index} className="backdrop-blur-lg bg-white/30 dark:bg-gray-900/40 p-6 rounded-lg border border-white/20 shadow-lg"> <h3 className="text-xl font-semibold mb-3">{feature.title}</h3> <p className="text-gray-800 dark:text-gray-200">{feature.description}</p> </div>
                                       ))}
                                   </div>
                              </main>
@@ -500,7 +555,18 @@ function App() {
         }
     };
 
-    return <>{renderCurrentPage()}</>;
+    return (
+        <>
+             {appNotification && (
+                 <AppNotification
+                     message={appNotification.message}
+                     type={appNotification.type}
+                     onClose={() => setAppNotification(null)}
+                 />
+             )}
+            {renderCurrentPage()}
+        </>
+    );
 }
 
 export default App;
