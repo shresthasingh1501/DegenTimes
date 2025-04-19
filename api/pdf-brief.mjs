@@ -6,16 +6,28 @@ export default async (req, res) => {
 
   try {
     const apiKey = process.env.OPENSERV_API_KEY;
+    const workspaceId = process.env.VITE_OPENSERV_WORKSPACE_ID; // Get workspace ID from env
+
     console.log("API Key:", apiKey ? 'Present' : 'Missing'); // Debug: API key presence
+    console.log("Workspace ID:", workspaceId ? 'Present' : 'Missing'); // Debug: Workspace ID presence
 
     if (!apiKey) {
       console.error("Error: API key not found on the server.");
       return res.status(500).json({ error: "API key not found on the server." });
     }
 
+    if (!workspaceId) {
+      console.error("Error: Workspace ID not found on the server. Ensure VITE_OPENSERV_WORKSPACE_ID is set.");
+      return res.status(500).json({ error: "Workspace ID not found on the server." });
+    }
+
     console.log("Fetching file list from API..."); // Debug: Before API request
 
-    const response = await axios.get('https://api.openserv.ai/workspaces/3414/files', {
+    // Construct the URL using the environment variable
+    const apiUrl = `https://api.openserv.ai/workspaces/${workspaceId}/files`;
+    console.log("API URL:", apiUrl); // Debug: Constructed API URL
+
+    const response = await axios.get(apiUrl, {
       headers: {
         'accept': 'application/json',
         'x-openserv-key': apiKey
