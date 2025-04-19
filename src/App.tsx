@@ -1,16 +1,14 @@
-// src/App.tsx
 import React, { useState, useEffect, Suspense, useCallback } from 'react';
 import { Moon, Sun } from 'lucide-react';
 import { useAuthStore } from './store/auth';
-import { OnboardingWizard, UserPreferences } from './components/OnboardingWizard';
+import { OnboardingWizard } from './components/OnboardingWizard';
 import { Dashboard } from './components/Dashboard';
 import { Background3D } from './components/Background3D';
 import { UpgradePage } from './components/UpgradePage';
 import { useGoogleLogin, googleLogout } from '@react-oauth/google';
 import axios from 'axios';
-import { supabase } from './supabaseClient'; // Import Supabase client
+import { supabase, SupabaseUserData, UserPreferences } from './supabaseClient';
 
-// Google User Profile interface
 export interface GoogleUserProfile {
     id: string;
     email: string;
@@ -22,11 +20,18 @@ export interface GoogleUserProfile {
     locale: string;
 }
 
-// Define possible page states
 type CurrentPage = 'landing' | 'onboarding' | 'dashboard' | 'upgrade' | 'loading' | 'error';
 
+const Background = React.memo(() => (
+    <Suspense fallback={<div className="fixed inset-0 bg-gradient-to-br from-gray-700 to-gray-900 -z-20"></div>}>
+        <Background3D />
+    </Suspense>
+));
+Background.displayName = 'MemoizedBackground';
+
+const VALID_REDEEM_CODE = "BOUNTY";
+
 function App() {
-    // --- State ---
     const [isDark, setIsDark] = useState(() => {
         const savedTheme = localStorage.getItem('theme');
         if (savedTheme) return savedTheme === 'dark';
@@ -38,41 +43,56 @@ function App() {
     const [currentPage, setCurrentPage] = useState<CurrentPage>('landing');
     const [loadingMessage, setLoadingMessage] = useState('Loading...');
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
+    const [telegramId, setTelegramId] = useState<string | null>(null);
+    const [teleUpdateRate, setTeleUpdateRate] = useState<number | null>(null);
+    const [isProUser, setIsProUser] = useState<boolean>(false);
+    const [isEnterpriseUser, setIsEnterpriseUser] = useState<boolean>(false);
+    const [watchlistNews, setWatchlistNews] = useState<string | null>(null);
+    const [sectorNews, setSectorNews] = useState<string | null>(null);
+    const [narrativeNews, setNarrativeNews] = useState<string | null>(null);
 
-    // --- Supabase Helper Functions ---
-    const fetchPreferences = useCallback(async (email: string): Promise<UserPreferences | null> => {
-        console.log(`Fetching preferences for ${email}...`);
+
+    const fetchUserData = useCallback(async (email: string): Promise<Partial<SupabaseUserData> | null> => {
+        console.log(`Fetching user data for ${email}...`);
         try {
             const { data, error, status } = await supabase
                 .from('user_preferences')
-                .select('preferences')
+                .select('preferences, telegramid, tele_update_rate, ispro, isenterprise, watchlist, sector, narrative')
                 .eq('user_email', email)
                 .single();
 
-            // Handle potential errors, specifically ignore 'PGRST116' (0 rows)
-            if (error && status !== 406) { // 406 is the status for 'PGRST116' when using .single()
-                console.error('Supabase fetch error:', error);
+            if (error && status !== 406) {
+                console.error('Supabase fetch user data error:', error);
                 throw new Error(`Supabase fetch error: ${error.message}`);
             }
 
             if (data) {
-                console.log("Preferences found:", data.preferences);
-                // Basic validation (optional but recommended)
-                if (typeof data.preferences === 'object' && data.preferences !== null) {
-                    return data.preferences as UserPreferences;
-                } else {
-                    console.warn("Fetched preferences are not a valid object:", data.preferences);
-                    return null; // Treat invalid data as no preferences
+                console.log("User data found:", data);
+                let validPreferences: UserPreferences | null = null;
+                if (data.preferences && typeof data.preferences === 'object') {
+                    validPreferences = data.preferences as UserPreferences;
+                } else if (data.preferences) {
+                     console.warn("Fetched preferences are not a valid object:", data.preferences);
                 }
+                return {
+                    preferences: validPreferences,
+                    telegramid: data.telegramid ?? null,
+                    tele_update_rate: data.tele_update_rate ?? null,
+                    ispro: data.ispro ?? false,
+                    isenterprise: data.isenterprise ?? false,
+                    watchlist: data.watchlist ?? null,
+                    sector: data.sector ?? null,
+                    narrative: data.narrative ?? null,
+                };
             } else {
-                console.log("No preferences found for user.");
+                console.log("No user data found for user.");
                 return null;
             }
         } catch (error) {
-             console.error("Caught error in fetchPreferences:", error);
-             throw error; // Re-throw to be caught by caller
+             console.error("Caught error in fetchUserData:", error);
+             throw error;
         }
-    }, []); // Empty dependency array as supabase client is stable
+    }, []);
 
     const savePreferences = useCallback(async (email: string, preferences: UserPreferences): Promise<void> => {
         console.log(`Saving preferences for ${email}...`, preferences);
@@ -82,7 +102,7 @@ function App() {
                 .upsert({ user_email: email, preferences: preferences }, { onConflict: 'user_email' });
 
              if (error) {
-                 console.error('Supabase save error:', error);
+                 console.error('Supabase save preferences error:', error);
                  throw new Error(`Supabase save error: ${error.message}`);
              }
              console.log("Preferences saved successfully.");
@@ -92,16 +112,52 @@ function App() {
          }
     }, []);
 
-    const deletePreferences = useCallback(async (email: string): Promise<void> => {
-        console.log(`Deleting preferences for ${email}...`);
+    const saveTelegramDetails = useCallback(async (email: string, newTelegramId: string | null, newRate: number | null): Promise<void> => {
+        console.log(`Saving Telegram details for ${email}...`, { telegramId: newTelegramId, rate: newRate });
+        if (!email) {
+            throw new Error("User email is missing, cannot save Telegram details.");
+        }
         try {
+            const updateData: Partial<Pick<SupabaseUserData, 'telegramid' | 'tele_update_rate'>> = {};
+             if (newTelegramId !== undefined) {
+                 updateData.telegramid = newTelegramId;
+             }
+             if (newRate !== undefined && newRate !== null) {
+                 updateData.tele_update_rate = newRate;
+             } else if (newRate === null) {
+                 updateData.tele_update_rate = null;
+             }
+
             const { error } = await supabase
                 .from('user_preferences')
-                .delete()
+                .update(updateData)
                 .eq('user_email', email);
 
             if (error) {
-                console.error('Supabase delete error:', error);
+                console.error('Supabase save Telegram details error:', error);
+                throw new Error(`Supabase save error: ${error.message}`);
+            }
+
+            setTelegramId(newTelegramId ?? null);
+            setTeleUpdateRate(newRate ?? null);
+
+            console.log("Telegram details saved successfully.");
+        } catch (error) {
+            console.error("Caught error in saveTelegramDetails:", error);
+            throw error;
+        }
+    }, []);
+
+    const deletePreferences = useCallback(async (email: string): Promise<void> => {
+        console.log(`Deleting preferences JSONB for ${email}...`);
+        try {
+            const { error } = await supabase
+                .from('user_preferences')
+                .update({ preferences: null })
+                .eq('user_email', email);
+
+            if (error) {
+                console.error('Supabase delete preferences error:', error);
                 throw new Error(`Supabase delete error: ${error.message}`);
             }
             console.log("Preferences deleted successfully.");
@@ -110,15 +166,39 @@ function App() {
             throw error;
         }
     }, []);
-    // --- End Supabase Helpers ---
 
-    // --- Effects ---
-    // Initial mount effect (optional cleanup)
+    const redeemProCode = useCallback(async (email: string, enteredCode: string): Promise<void> => {
+        console.log(`Attempting to redeem code "${enteredCode}" for ${email}`);
+        if (enteredCode !== VALID_REDEEM_CODE) {
+            console.log("Invalid code entered.");
+            throw new Error("Invalid code entered.");
+        }
+
+        console.log("Valid code entered, updating user to Pro...");
+        try {
+            const { error } = await supabase
+                .from('user_preferences')
+                .update({ ispro: true })
+                .eq('user_email', email);
+
+            if (error) {
+                console.error('Supabase update error during redeem:', error);
+                throw new Error(`Failed to update account: ${error.message}`);
+            }
+
+            setIsProUser(true);
+            console.log("User successfully updated to Pro.");
+
+        } catch (error) {
+            console.error("Caught error in redeemProCode:", error);
+            throw error;
+        }
+    }, []);
+
     useEffect(() => {
-        console.log("App mounted. Current state:", currentPage);
-    }, [currentPage]); // Log page changes
+        console.log("App mounted/page changed. Current state:", currentPage);
+    }, [currentPage]);
 
-    // Theme effect
     useEffect(() => {
         if (isDark) {
             document.documentElement.classList.add('dark');
@@ -128,21 +208,23 @@ function App() {
             localStorage.setItem('theme', 'light');
         }
     }, [isDark]);
-    // --- End Effects ---
 
-
-    // --- Authentication and Data Handling ---
     const handleLogout = useCallback(() => {
         googleLogout();
-        // Consider Supabase signout if using Supabase Auth
-        // supabase.auth.signOut();
         setIsAuthenticated(false);
         setUserPreferences(null);
         setGoogleUser(null);
+        setTelegramId(null);
+        setTeleUpdateRate(null);
+        setIsProUser(false);
+        setIsEnterpriseUser(false);
+        setWatchlistNews(null);
+        setSectorNews(null);
+        setNarrativeNews(null);
         setCurrentPage('landing');
         setErrorMessage(null);
         console.log("User logged out");
-    }, [setIsAuthenticated]); // Add dependencies
+    }, [setIsAuthenticated]);
 
 
     const handleGoogleLoginSuccess = useCallback(async (tokenResponse: any) => {
@@ -150,7 +232,6 @@ function App() {
         setCurrentPage('loading');
         setLoadingMessage('Authenticating & fetching profile...');
         try {
-            // 1. Fetch Google User Info
             const userInfoResponse = await axios.get<GoogleUserProfile>(
                 'https://www.googleapis.com/oauth2/v3/userinfo',
                 { headers: { Authorization: `Bearer ${tokenResponse.access_token}` } }
@@ -165,36 +246,49 @@ function App() {
             setGoogleUser(user);
             setIsAuthenticated(true);
 
-            // 2. Check Supabase for Preferences
-            setLoadingMessage('Checking preferences...');
-            const existingPrefs = await fetchPreferences(user.email);
-            setUserPreferences(existingPrefs);
+            setLoadingMessage('Checking preferences & settings...');
+            const userData = await fetchUserData(user.email);
 
-            // 3. Navigate based on preferences
-            if (existingPrefs) {
+            setUserPreferences(userData?.preferences ?? null);
+            setTelegramId(userData?.telegramid ?? null);
+            setTeleUpdateRate(userData?.tele_update_rate ?? null);
+            setIsProUser(userData?.ispro ?? false);
+            setIsEnterpriseUser(userData?.isenterprise ?? false);
+            setWatchlistNews(userData?.watchlist ?? null);
+            setSectorNews(userData?.sector ?? null);
+            setNarrativeNews(userData?.narrative ?? null);
+
+
+            if (userData?.preferences) {
                 setCurrentPage('dashboard');
             } else {
+                 if (!userData) {
+                     console.log("No user record found, creating one before onboarding...");
+                     await supabase.from('user_preferences').upsert({
+                         user_email: user.email,
+                         ispro: false,
+                         isenterprise: false
+                        });
+                 }
                 setCurrentPage('onboarding');
             }
 
         } catch (error: any) {
-            console.error("Error during login/preference check:", error);
+            console.error("Error during login/data check:", error);
             setErrorMessage(`Login failed: ${error.message || 'Unknown error'}. Please try again.`);
             setCurrentPage('error');
-            // Clean up potentially partial auth state
             handleLogout();
         }
-    }, [fetchPreferences, setIsAuthenticated, handleLogout]); // Add dependencies
+    }, [fetchUserData, setIsAuthenticated, handleLogout]);
 
     const handleGoogleLoginError = useCallback((error: any) => {
         console.error("Google Login Failed:", error);
-        // Provide more specific error message if possible, e.g., user closed popup
         let message = "Google login failed. Please try again.";
         if (error?.type === 'popup_closed') {
             message = "Login cancelled. Please try again if you wish to continue.";
-            setCurrentPage('landing'); // Go back to landing if user cancelled
+            setCurrentPage('landing');
         } else {
-            setCurrentPage('error'); // Show error page for other errors
+            setCurrentPage('error');
         }
          setErrorMessage(message);
     }, []);
@@ -204,7 +298,6 @@ function App() {
         onError: handleGoogleLoginError,
     });
 
-    // Called from OnboardingWizard
     const handleOnboardingComplete = useCallback(async (preferences: UserPreferences) => {
         if (!googleUser?.email) {
              console.error("Cannot save preferences, user email is missing.");
@@ -226,7 +319,6 @@ function App() {
         }
     }, [googleUser, savePreferences]);
 
-    // Called from Dashboard
     const handleResetPreferencesRequest = useCallback(async () => {
         if (!googleUser?.email) {
             console.error("Cannot reset preferences, user email is missing.");
@@ -247,42 +339,26 @@ function App() {
              setCurrentPage('error');
         }
     }, [googleUser, deletePreferences]);
-    // --- End Authentication and Data Handling ---
 
-
-    // --- Navigation ---
     const showUpgradePage = useCallback(() => setCurrentPage('upgrade'), []);
     const showDashboard = useCallback(() => {
          if (isAuthenticated) {
              setCurrentPage('dashboard');
          } else {
              console.warn("Attempted to show dashboard while not authenticated.");
-             handleLogout(); // Redirect to landing if not authenticated
+             handleLogout();
          }
     }, [isAuthenticated, handleLogout]);
     const tryAgain = useCallback(() => {
-        setErrorMessage(null); // Clear error before going back
+        setErrorMessage(null);
         setCurrentPage('landing');
     }, []);
-    // --- End Navigation ---
 
-
-    // --- Background Component ---
-    const Background = React.memo(() => ( // Memoize background
-        <Suspense fallback={<div className="fixed inset-0 bg-gradient-to-br from-gray-700 to-gray-900 -z-20"></div>}>
-            <Background3D />
-        </Suspense>
-    ));
-    // --- End Background Component ---
-
-
-    // --- Render Logic based on currentPage ---
     const renderCurrentPage = () => {
         switch (currentPage) {
             case 'loading':
                 return (
                     <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
-                        {/* Consider adding a visual spinner here */}
                         <p className="text-xl text-gray-700 dark:text-gray-300 animate-pulse">{loadingMessage}</p>
                     </div>
                 );
@@ -300,40 +376,46 @@ function App() {
                     </div>
                  );
             case 'onboarding':
-                // Ensure user is authenticated before showing onboarding
                 if (!isAuthenticated || !googleUser) {
                     console.warn("Attempted to show onboarding while not authenticated.");
-                    handleLogout(); // Should not happen, but redirect if it does
+                    handleLogout();
                     return null;
                 }
-                // Pass saving state based on loading message (could be more robust)
                 const isSavingPrefs = currentPage === 'loading' && loadingMessage.includes('Saving');
                 return <OnboardingWizard
                             onComplete={handleOnboardingComplete}
                             isSaving={isSavingPrefs}
                        />;
             case 'dashboard':
-                 // Ensure user is authenticated and preferences are loaded
                  if (!isAuthenticated || !googleUser) {
                      console.warn("Attempted to show dashboard while not authenticated.");
                      handleLogout();
                      return null;
-                 }
-                 if (userPreferences === null && currentPage !== 'loading') {
-                     // This case might happen if fetchPreferences returned null unexpectedly after login success
-                     console.warn("Dashboard rendered without preferences state, forcing reset.");
-                     handleResetPreferencesRequest(); // Force re-onboarding
-                     return null; // Avoid rendering dashboard flicker
                  }
                 return (
                     <>
                         <Background />
                         <Dashboard
                             onEditPreferences={handleResetPreferencesRequest}
-                            initialPreferences={userPreferences} // Pass potentially null prefs initially
+                            initialPreferences={userPreferences}
                             onLogout={handleLogout}
                             googleUser={googleUser}
                             onNavigateToUpgrade={showUpgradePage}
+                            telegramId={telegramId}
+                            teleUpdateRate={teleUpdateRate}
+                            onSaveTelegramDetails={async (id, rate) => {
+                                if (googleUser?.email) {
+                                   await saveTelegramDetails(googleUser.email, id, rate);
+                                } else {
+                                    console.error("Dashboard: Cannot save Telegram details, user email missing.");
+                                    throw new Error("User email not available.");
+                                }
+                            }}
+                            isPro={isProUser}
+                            isEnterprise={isEnterpriseUser}
+                            watchlistNews={watchlistNews}
+                            sectorNews={sectorNews}
+                            narrativeNews={narrativeNews}
                         />
                     </>
                 );
@@ -343,10 +425,15 @@ function App() {
                      handleLogout();
                      return null;
                  }
-                return <UpgradePage onGoBack={showDashboard} />;
+                 return (
+                     <UpgradePage
+                         onGoBack={showDashboard}
+                         userEmail={googleUser.email}
+                         onRedeemCode={redeemProCode}
+                     />
+                 );
             case 'landing':
             default:
-                 // Reset error message when returning to landing
                  if (errorMessage) setErrorMessage(null);
                 return (
                      <>
@@ -384,7 +471,6 @@ function App() {
                                          {currentPage === 'loading' ? 'Connecting...' : 'Continue with Google'}
                                      </button>
                                  </div>
-                                 {/* Features Section */}
                                  <div className="grid md:grid-cols-3 gap-8 mt-24">
                                       {[
                                           { title: 'Personalized', description: 'Tailored insights based on your interests, portfolio, and trading style.' },

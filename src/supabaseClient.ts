@@ -1,4 +1,3 @@
-// src/supabaseClient.ts
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -10,15 +9,19 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// Define the structure of your preferences data in Supabase
-export interface SupabaseUserPreferences {
-  user_email: string; // Primary Key
-  preferences: UserPreferences; // Stored as JSONB
-  created_at?: string; // Optional: Supabase adds this automatically
-  updated_at?: string; // Optional: Supabase adds this automatically
-}
+export type { UserPreferences } from './components/OnboardingWizard';
+import { UserPreferences } from './components/OnboardingWizard';
 
-// Re-export UserPreferences if not already globally available
-// If UserPreferences is defined elsewhere (e.g., OnboardingWizard), import it here.
-// Example: import { UserPreferences } from './components/OnboardingWizard';
-export type { UserPreferences } from './components/OnboardingWizard'; // Assuming it's exported there
+export interface SupabaseUserData {
+  user_email: string;
+  preferences: UserPreferences | null;
+  created_at?: string;
+  updated_at?: string;
+  telegramid?: string | null;
+  tele_update_rate?: number | null;
+  ispro?: boolean | null;
+  watchlist?: string | null;
+  sector?: string | null;
+  narrative?: string | null;
+  isenterprise?: boolean | null;
+}
