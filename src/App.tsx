@@ -69,13 +69,15 @@ function App() {
             if (data) {
                 console.log("User data found:", data);
                 let validPreferences: UserPreferences | null = null;
-                if (data.preferences && typeof data.preferences === 'object') {
+                // Check if preferences is not null and is an object with keys (not just {})
+                if (data.preferences && typeof data.preferences === 'object' && Object.keys(data.preferences).length > 0) {
                     validPreferences = data.preferences as UserPreferences;
                 } else if (data.preferences) {
-                     console.warn("Fetched preferences are not a valid object:", data.preferences);
+                     // It exists but might be an empty object '{}' which we treat as null/unset for UI logic
+                     console.log("Fetched preferences are empty or invalid:", data.preferences);
                 }
                 return {
-                    preferences: validPreferences,
+                    preferences: validPreferences, // Return null if empty or invalid
                     telegramid: data.telegramid ?? null,
                     tele_update_rate: data.tele_update_rate ?? null,
                     ispro: data.ispro ?? false,
@@ -148,24 +150,30 @@ function App() {
         }
     }, []);
 
+    // --- UPDATED deletePreferences function ---
     const deletePreferences = useCallback(async (email: string): Promise<void> => {
-        console.log(`Deleting preferences JSONB for ${email}...`);
+        // Instead of setting to NULL, set to an empty JSON object '{}'
+        // This satisfies NOT NULL constraints while representing an empty/reset state.
+        console.log(`Resetting preferences field for ${email}...`);
         try {
             const { error } = await supabase
                 .from('user_preferences')
-                .update({ preferences: null })
+                .update({ preferences: {} }) // Set preferences to empty object
                 .eq('user_email', email);
 
             if (error) {
-                console.error('Supabase delete preferences error:', error);
-                throw new Error(`Supabase delete error: ${error.message}`);
+                console.error('Supabase reset preferences error:', error);
+                // Provide more context if possible from the error object
+                throw new Error(`Supabase reset error: ${error.message}`);
             }
-            console.log("Preferences deleted successfully.");
+            console.log("Preferences field reset successfully.");
         } catch (error) {
             console.error("Caught error in deletePreferences:", error);
-            throw error;
+            throw error; // Re-throw to be handled by the caller
         }
     }, []);
+    // --- END UPDATED deletePreferences function ---
+
 
     const redeemProCode = useCallback(async (email: string, enteredCode: string): Promise<void> => {
         console.log(`Attempting to redeem code "${enteredCode}" for ${email}`);
@@ -259,18 +267,20 @@ function App() {
             setNarrativeNews(userData?.narrative ?? null);
 
 
-            if (userData?.preferences) {
+            if (userData?.preferences) { // Navigate to dashboard if preferences are not null/empty
                 setCurrentPage('dashboard');
             } else {
+                 // If user data doesn't exist at all, create the row first
                  if (!userData) {
                      console.log("No user record found, creating one before onboarding...");
                      await supabase.from('user_preferences').upsert({
                          user_email: user.email,
+                         preferences: {}, // Ensure preferences starts as {} to satisfy NOT NULL
                          ispro: false,
                          isenterprise: false
                         });
                  }
-                setCurrentPage('onboarding');
+                setCurrentPage('onboarding'); // Go to onboarding if no valid prefs found
             }
 
         } catch (error: any) {
@@ -330,11 +340,11 @@ function App() {
         setCurrentPage('loading');
         setLoadingMessage('Resetting preferences...');
         try {
-            await deletePreferences(googleUser.email);
-            setUserPreferences(null);
-            setCurrentPage('onboarding');
+            await deletePreferences(googleUser.email); // This now sets preferences to {}
+            setUserPreferences(null); // Clear local state
+            setCurrentPage('onboarding'); // Go to onboarding
         } catch (error: any) {
-             console.error("Error deleting preferences:", error);
+             console.error("Error resetting preferences:", error); // Changed log prefix
              setErrorMessage(`Failed to reset preferences: ${error.message || 'Please try again.'}`);
              setCurrentPage('error');
         }
