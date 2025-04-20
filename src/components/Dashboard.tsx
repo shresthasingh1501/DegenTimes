@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
+import remarkGfm from 'remark-gfm'; // <<< Import remark-gfm
 import clsx from 'clsx';
 import jsPDF from 'jspdf';
 import ReactDOM from 'react-dom';
@@ -48,7 +49,7 @@ interface DashboardProps {
     googleUser: GoogleUserProfile | null;
     onNavigateToUpgrade: () => void;
     telegramId: string | null;
-    teleUpdateRate: number | null;
+    teleUpdateRate: number | null; // Still keep the prop, even if UI is hidden
     onSaveTelegramDetails: (email: string, telegramId: string | null, teleUpdateRate: number | null) => Promise<void>; // Expects email, id, rate
     isPro: boolean;
     isEnterprise: boolean;
@@ -113,7 +114,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const [pdfUrlError, setPdfUrlError] = useState<string | null>(null);
     const [pdfURL, setPdfURL] = useState<string | null>(null);
     const [telegramIdInput, setTelegramIdInput] = useState<string>('');
-    const [teleRateInput, setTeleRateInput] = useState<number>(24);
+    const [teleRateInput, setTeleRateInput] = useState<number>(24); // Keep state even if UI hidden
     const [isSavingTelegram, setIsSavingTelegram] = useState<boolean>(false);
     const [telegramSaveError, setTelegramSaveError] = useState<string | null>(null);
     const [emailInput, setEmailInput] = useState('');
@@ -248,7 +249,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         setIsSavingTelegram(false);
         setTelegramSaveError(null);
         setTelegramIdInput(telegramId ?? '');
-        setTeleRateInput(teleUpdateRate ?? 24);
+        setTeleRateInput(teleUpdateRate ?? 24); // Keep setting the state
         setTelegramModalOpen(true);
         // Timer logic is now handled by the useEffect hook watching telegramModalOpen
     };
@@ -270,7 +271,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
         setIsSavingTelegram(true);
         setTelegramSaveError(null);
         try {
-            const rateToSave = Math.max(1, Math.min(24, teleRateInput));
+            // Use the current state value, even if UI is hidden. Default to 24 if something went wrong.
+            const rateToSave = Math.max(1, Math.min(24, teleRateInput || 24));
             const idToSave = telegramIdInput.trim() || null; // Ensure empty string becomes null
 
             // Pass the user's email as the first argument
@@ -329,7 +331,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         const markdownElement = (
             <div className="prose prose-sm max-w-none p-10 bg-white text-black"> {/* Added bg/text for render */}
-                <ReactMarkdown rehypePlugins={[rehypeRaw]}>
+                {/* <<< Add remarkGfm here too for PDF rendering consistency */}
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
                     {markdownContent}
                 </ReactMarkdown>
             </div>
@@ -373,13 +376,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
 
     const renderNewsContent = () => {
+        const markdownProps = {
+            remarkPlugins: [remarkGfm], // <<< Add GFM plugin
+            rehypePlugins: [rehypeRaw]
+        };
+
         switch(activeNewsTab) {
             case 'watchlist':
-                return watchlistNews ? <ReactMarkdown rehypePlugins={[rehypeRaw]}>{watchlistNews}</ReactMarkdown> : <p className="italic text-gray-500 dark:text-gray-400">No watchlist news available.</p>;
+                return watchlistNews ? <ReactMarkdown {...markdownProps}>{watchlistNews}</ReactMarkdown> : <p className="italic text-gray-500 dark:text-gray-400">No watchlist news available.</p>;
             case 'sector':
-                return sectorNews ? <ReactMarkdown rehypePlugins={[rehypeRaw]}>{sectorNews}</ReactMarkdown> : <p className="italic text-gray-500 dark:text-gray-400">No sector news available.</p>;
+                return sectorNews ? <ReactMarkdown {...markdownProps}>{sectorNews}</ReactMarkdown> : <p className="italic text-gray-500 dark:text-gray-400">No sector news available.</p>;
             case 'narrative':
-                return narrativeNews ? <ReactMarkdown rehypePlugins={[rehypeRaw]}>{narrativeNews}</ReactMarkdown> : <p className="italic text-gray-500 dark:text-gray-400">No narrative news available.</p>;
+                return narrativeNews ? <ReactMarkdown {...markdownProps}>{narrativeNews}</ReactMarkdown> : <p className="italic text-gray-500 dark:text-gray-400">No narrative news available.</p>;
             case 'trending':
                 if (trendingLoading) {
                     return <div className="flex justify-center items-center h-40"><LoaderIcon className="w-8 h-8 animate-spin text-purple-500" /></div>;
@@ -485,8 +493,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                          <button onClick={() => setEmailModalOpen(true)} className="flex items-center gap-2 px-3 py-2 sm:px-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow-md transition-shadow text-gray-700 dark:text-gray-300 text-sm sm:text-base"> <Mail className="w-4 h-4 sm:w-5 sm:h-5" /> <span>Email Brief</span> </button>
                          <button onClick={openTelegramModal} className="flex items-center gap-2 px-3 py-2 sm:px-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow-md transition-shadow text-gray-700 dark:text-gray-300 text-sm sm:text-base"> <Send className="w-4 h-4 sm:w-5 sm:h-5" /> <span>Telegram Brief</span> </button>
                          <button onClick={() => setTwitterModalOpen(true)} className="flex items-center gap-2 px-3 py-2 sm:px-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow-md transition-shadow text-gray-700 dark:text-gray-300 text-sm sm:text-base"> <BrandX className="w-4 h-4 sm:w-5 sm:h-5" /> <span>X Updates</span> </button>
-                         {/* Download Personalized Brief Button - Only shown for Pro/Enterprise */}
-                         {showProFeatures && (watchlistNews || sectorNews || narrativeNews) && (
+
+                         {/* <<< HIDE Personalized PDF Button >>> */}
+                         {/* {showProFeatures && (watchlistNews || sectorNews || narrativeNews) && (
                             <button
                                 onClick={handleDownloadPersonalizedBrief}
                                 className="flex items-center gap-2 px-3 py-2 sm:px-4 bg-green-100 dark:bg-green-900 rounded-lg shadow-sm hover:shadow-md transition-shadow text-green-700 dark:text-green-300 text-sm sm:text-base hover:bg-green-200 dark:hover:bg-green-800"
@@ -495,7 +504,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 <DownloadCloud className="w-4 h-4 sm:w-5 sm:h-5" />
                                 <span>Personalized PDF</span>
                             </button>
-                         )}
+                         )} */}
+                         {/* <<< END HIDE Personalized PDF Button >>> */}
+
                     </div>
                     {/* Right Buttons */}
                     <div className="flex flex-wrap items-center gap-2 sm:gap-4">
@@ -596,7 +607,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                             {/* Content Area */}
                             <div id="news-content-panel" role="tabpanel" className="p-4 md:p-6 border border-t-0 border-gray-300 dark:border-gray-600 rounded-b-lg bg-white dark:bg-gray-800 min-h-[300px] max-h-[70vh] overflow-y-auto">
-                                <div className="prose prose-sm sm:prose-base dark:prose-invert max-w-none">
+                                 {/* <<< Apply prose styles for markdown rendering >>> */}
+                                <div className="prose prose-sm sm:prose-base dark:prose-invert max-w-none prose-headings:my-2 prose-p:my-1 prose-table:border prose-table:border-collapse prose-th:border prose-th:p-2 prose-td:border prose-td:p-2">
                                     {renderNewsContent()}
                                 </div>
                             </div>
@@ -643,11 +655,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
                          <input id="telegramId" type="text" value={telegramIdInput} onChange={(e) => setTelegramIdInput(e.target.value)} placeholder="Your Telegram User ID or @username" disabled={isSavingTelegram} className="w-full px-3 py-2 rounded border dark:border-gray-600 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50 disabled:bg-gray-100 dark:disabled:bg-gray-600" />
                           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Find your ID using bots like @userinfobot.</p>
                     </div>
+
+                    {/* <<< HIDE Time Slider >>> */}
+                    {/*
                     <div>
                         <label htmlFor="teleUpdateRate" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"> Update Frequency: <span className="font-semibold text-purple-600 dark:text-purple-400">{teleRateInput} {teleRateInput === 1 ? 'hour' : 'hours'}</span> </label>
                         <input id="teleUpdateRate" type="range" min="1" max="24" step="1" value={teleRateInput} onChange={(e) => setTeleRateInput(parseInt(e.target.value, 10))} disabled={isSavingTelegram} className="w-full h-2 bg-gray-200 dark:bg-gray-600 rounded-lg appearance-none cursor-pointer accent-purple-600 dark:accent-purple-500 disabled:opacity-50 disabled:cursor-not-allowed" />
                         <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1 px-1"> <span>1 hr</span> <span>12 hrs</span> <span>24 hrs</span> </div>
                     </div>
+                    */}
+                    {/* <<< END HIDE Time Slider >>> */}
+
                     {/* Save Button with Delay Logic */}
                     <button
                         onClick={handleSaveTelegramDetails}
