@@ -1,3 +1,6 @@
+// ================================================
+// FILE: src/App.tsx
+// ================================================
 // src/App.tsx
 
 import React, { useState, useEffect, Suspense, useCallback, useRef } from 'react';
@@ -10,7 +13,7 @@ import { UpgradePage } from './components/UpgradePage';
 import { useGoogleLogin, googleLogout } from '@react-oauth/google';
 import axios from 'axios';
 import clsx from 'clsx';
-import { supabase, SupabaseUserData, UserPreferences } from './supabaseClient';
+import { supabase, SupabaseUserData, UserPreferences } from './supabaseClient'; // Ensure supabase is imported
 
 export interface GoogleUserProfile {
     id: string;
@@ -103,7 +106,7 @@ function App() {
     const fetchUserData = useCallback(async (email: string): Promise<Partial<SupabaseUserData> | null> => {
         console.log(`Fetching user data for ${email}...`);
         try {
-            const { data, error, status } = await supabase
+            const { data, error, status } = await supabase // Using supabase here
                 .from('user_preferences')
                 .select('preferences, telegramid, tele_update_rate, ispro, isenterprise, watchlist, sector, narrative')
                 .eq('user_email', email)
@@ -140,12 +143,12 @@ function App() {
              console.error("Caught error in fetchUserData:", error);
              throw error;
         }
-    }, []);
+    }, [supabase]); // Added supabase dependency
 
     const savePreferences = useCallback(async (email: string, preferences: UserPreferences): Promise<void> => {
         console.log(`Saving preferences for ${email}...`, preferences);
         try {
-             const { error } = await supabase
+             const { error } = await supabase // Using supabase here
                 .from('user_preferences')
                 .upsert({ user_email: email, preferences: preferences }, { onConflict: 'user_email' });
 
@@ -158,47 +161,88 @@ function App() {
              console.error("Caught error in savePreferences:", error);
              throw error;
          }
-    }, []);
+    }, [supabase]); // Added supabase dependency
 
     const saveTelegramDetails = useCallback(async (email: string, newTelegramId: string | null, newRate: number | null): Promise<void> => {
         console.log(`Saving Telegram details for ${email}...`, { telegramId: newTelegramId, rate: newRate });
-        if (!email) throw new Error("User email is missing, cannot save Telegram details.");
+        if (!email) {
+            console.error("User email is missing in saveTelegramDetails!");
+            throw new Error("User email is missing, cannot save Telegram details.");
+        }
         try {
             const updateData: Partial<Pick<SupabaseUserData, 'telegramid' | 'tele_update_rate'>> = {};
              if (newTelegramId !== undefined) updateData.telegramid = newTelegramId;
              if (newRate !== undefined && newRate !== null) updateData.tele_update_rate = newRate;
              else if (newRate === null) updateData.tele_update_rate = null;
-            const { error } = await supabase.from('user_preferences').update(updateData).eq('user_email', email);
-            if (error) throw new Error(`Supabase save error: ${error.message}`);
-            setTelegramId(newTelegramId ?? null);
-            setTeleUpdateRate(newRate ?? null);
-            showAppNotification("Telegram settings updated successfully!", 'success');
-            console.log("Telegram details saved successfully.");
+
+            // --- DEBUG LOGS ---
+            console.log('Attempting Supabase update with:');
+            console.log('Email:', email);
+            console.log('Update Data:', updateData);
+            // --- END DEBUG LOGS ---
+
+            if (Object.keys(updateData).length === 0) {
+                console.warn("No data to update for Telegram details.");
+                showAppNotification("No changes detected in Telegram settings.", 'info');
+                return;
+            }
+
+            const { data, error } = await supabase // Using supabase here
+                .from('user_preferences')
+                .update(updateData)
+                .eq('user_email', email)
+                .select(); // Requesting data back
+
+            // --- MORE DEBUG LOGS ---
+            console.log('Supabase update response:', { data, error });
+            // --- END MORE DEBUG LOGS ---
+
+            if (error) {
+                console.error('Supabase save Telegram details error:', error);
+                throw new Error(`Supabase save error: ${error.message}`);
+            }
+
+            if (data && data.length > 0) {
+                 console.log("Telegram details saved successfully in Supabase for:", data[0].user_email);
+                 setTelegramId(newTelegramId ?? null);
+                 setTeleUpdateRate(newRate ?? null);
+                 showAppNotification("Telegram settings updated successfully!", 'success');
+            } else {
+                 console.warn("Supabase update ran without error, but no rows were updated. Was the email correct?");
+                 showAppNotification("Could not find user record to update Telegram settings.", 'error');
+            }
+
         } catch (error) {
             console.error("Caught error in saveTelegramDetails:", error);
             showAppNotification(`Failed to save Telegram settings: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
             throw error;
         }
-    }, [showAppNotification]);
+    }, [showAppNotification, supabase]); // Added supabase dependency
 
     const deletePreferences = useCallback(async (email: string): Promise<void> => {
         console.log(`Resetting preferences field for ${email}...`);
         try {
-            const { error } = await supabase.from('user_preferences').update({ preferences: {} }).eq('user_email', email);
+            const { error } = await supabase // Using supabase here
+                .from('user_preferences')
+                .update({ preferences: {} })
+                .eq('user_email', email);
             if (error) throw new Error(`Supabase reset error: ${error.message}`);
             console.log("Preferences field reset successfully.");
         } catch (error) {
             console.error("Caught error in deletePreferences:", error);
             throw error;
         }
-    }, []);
+    }, [supabase]); // Added supabase dependency
 
     const redeemProCode = useCallback(async (email: string, enteredCode: string): Promise<void> => {
         console.log(`Attempting to redeem code "${enteredCode}" for ${email}`);
         if (enteredCode !== VALID_REDEEM_CODE) throw new Error("Invalid code entered.");
         console.log("Valid code entered, updating user to Pro...");
         try {
-            const { error } = await supabase.from('user_preferences').update({ ispro: true }).eq('user_email', email);
+            const { error } = await supabase // Using supabase here
+                .from('user_preferences')
+                .update({ ispro: true })
+                .eq('user_email', email);
             if (error) throw new Error(`Failed to update account: ${error.message}`);
             setIsProUser(true); // Update local state BEFORE showing notification
             showAppNotification("Code redeemed successfully! You now have Pro access.", 'success', 5000);
@@ -207,7 +251,7 @@ function App() {
             console.error("Caught error in redeemProCode:", error);
             throw error; // Let UpgradePage handle modal error message
         }
-    }, [showAppNotification]);
+    }, [showAppNotification, supabase]); // Added supabase dependency
 
     useEffect(() => {
         console.log("App mounted/page changed. Current state:", currentPage);
@@ -283,7 +327,7 @@ function App() {
             setIsAuthenticated(true);
 
             setLoadingMessage('Checking preferences & settings...');
-            const userData = await fetchUserData(user.email);
+            const userData = await fetchUserData(user.email); // Using fetchUserData here
 
             // Store previous pro status *before* updating state
             const previousProStatus = isProUser;
@@ -306,7 +350,7 @@ function App() {
             } else {
                  if (!userData) {
                      console.log("No user record found, creating one before onboarding...");
-                     await supabase.from('user_preferences').upsert({
+                     await supabase.from('user_preferences').upsert({ // Using supabase directly
                          user_email: user.email,
                          preferences: {},
                          ispro: false,
@@ -322,7 +366,7 @@ function App() {
             setCurrentPage('error');
             handleLogout();
         }
-    }, [fetchUserData, setIsAuthenticated, handleLogout, isProUser]); // Added isProUser to dependencies to read it
+    }, [fetchUserData, setIsAuthenticated, handleLogout, isProUser, supabase]); // Added supabase dependency
 
     const handleGoogleLoginError = useCallback((error: any) => {
         console.error("Google Login Failed:", error);
@@ -350,7 +394,7 @@ function App() {
         setCurrentPage('loading');
         setLoadingMessage('Saving your preferences...');
         try {
-            await savePreferences(googleUser.email, preferences);
+            await savePreferences(googleUser.email, preferences); // Using savePreferences here
             setUserPreferences(preferences);
             setCurrentPage('dashboard');
 
@@ -378,7 +422,7 @@ function App() {
             setCurrentPage('error');
             showAppNotification(`Failed to save preferences: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
         }
-    }, [googleUser, savePreferences, showAppNotification, isProUser, isEnterpriseUser, userPreferences]);
+    }, [googleUser, savePreferences, showAppNotification, isProUser, isEnterpriseUser, userPreferences]); // Added dependencies
 
     const handleResetPreferencesRequest = useCallback(async () => {
         if (!googleUser?.email) {
@@ -389,7 +433,7 @@ function App() {
         setCurrentPage('loading');
         setLoadingMessage('Resetting preferences...');
         try {
-            await deletePreferences(googleUser.email);
+            await deletePreferences(googleUser.email); // Using deletePreferences here
             setUserPreferences(null);
             setCurrentPage('onboarding');
             // Show different message depending on tier
@@ -407,7 +451,7 @@ function App() {
              setCurrentPage('error');
              showAppNotification(`Failed to reset preferences: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
         }
-    }, [googleUser, deletePreferences, showAppNotification, isProUser, isEnterpriseUser]); // Added tier dependency
+    }, [googleUser, deletePreferences, showAppNotification, isProUser, isEnterpriseUser]); // Added dependencies
 
     const showUpgradePage = useCallback(() => setCurrentPage('upgrade'), []);
     const showDashboard = useCallback(() => {
@@ -432,14 +476,14 @@ function App() {
                      <>
                          <Background />
                          <Dashboard
-                             onEditPreferences={handleResetPreferencesRequest}
+                             onEditPreferences={handleResetPreferencesRequest} // Uses deletePreferences
                              initialPreferences={userPreferences}
                              onLogout={handleLogout}
                              googleUser={googleUser}
                              onNavigateToUpgrade={showUpgradePage}
                              telegramId={telegramId}
                              teleUpdateRate={teleUpdateRate}
-                             onSaveTelegramDetails={saveTelegramDetails}
+                             onSaveTelegramDetails={saveTelegramDetails} // Uses supabase
                              isPro={isProUser}
                              isEnterprise={isEnterpriseUser}
                              watchlistNews={watchlistNews}
@@ -451,7 +495,7 @@ function App() {
                  );
              case 'upgrade':
                  if (!isAuthenticated || !googleUser) { handleLogout(); return null; }
-                 return <UpgradePage onGoBack={showDashboard} userEmail={googleUser.email} onRedeemCode={redeemProCode} showAppNotification={showAppNotification} />;
+                 return <UpgradePage onGoBack={showDashboard} userEmail={googleUser.email} onRedeemCode={redeemProCode} showAppNotification={showAppNotification} />; // Uses redeemProCode
             case 'landing':
             default:
                  if (errorMessage) setErrorMessage(null);
