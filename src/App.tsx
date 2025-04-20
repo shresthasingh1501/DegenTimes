@@ -1,8 +1,3 @@
-// ================================================
-// FILE: src/App.tsx
-// ================================================
-// src/App.tsx
-
 import React, { useState, useEffect, Suspense, useCallback, useRef } from 'react';
 import { Moon, Sun, X as CloseIcon, CheckCircle, AlertCircle } from 'lucide-react';
 import { useAuthStore } from './store/auth';
@@ -88,6 +83,7 @@ function App() {
     const [watchlistNews, setWatchlistNews] = useState<string | null>(null);
     const [sectorNews, setSectorNews] = useState<string | null>(null);
     const [narrativeNews, setNarrativeNews] = useState<string | null>(null);
+    const [preferenceUpdateTimestamp, setPreferenceUpdateTimestamp] = useState<string | null>(null); // <<< ADDED STATE
     const [appNotification, setAppNotification] = useState<{ message: string; type: NotificationType } | null>(null);
     const appNotificationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const prevIsProUserRef = useRef<boolean>(isProUser); // Ref to track previous pro status
@@ -103,12 +99,14 @@ function App() {
         }, duration);
     }, []);
 
+    // <<< MODIFIED fetchUserData
     const fetchUserData = useCallback(async (email: string): Promise<Partial<SupabaseUserData> | null> => {
         console.log(`Fetching user data for ${email}...`);
         try {
-            const { data, error, status } = await supabase // Using supabase here
+            // <<< ADDED 'preference_update' to select
+            const { data, error, status } = await supabase
                 .from('user_preferences')
-                .select('preferences, telegramid, tele_update_rate, ispro, isenterprise, watchlist, sector, narrative')
+                .select('preferences, telegramid, tele_update_rate, ispro, isenterprise, watchlist, sector, narrative, preference_update')
                 .eq('user_email', email)
                 .single();
 
@@ -125,6 +123,7 @@ function App() {
                 } else if (data.preferences) {
                      console.log("Fetched preferences are empty or invalid:", data.preferences);
                 }
+                // <<< ADDED preference_update to return object
                 return {
                     preferences: validPreferences,
                     telegramid: data.telegramid ?? null,
@@ -134,6 +133,7 @@ function App() {
                     watchlist: data.watchlist ?? null,
                     sector: data.sector ?? null,
                     narrative: data.narrative ?? null,
+                    preference_update: data.preference_update ?? null, // Add this
                 };
             } else {
                 console.log("No user data found for user.");
@@ -145,18 +145,25 @@ function App() {
         }
     }, [supabase]); // Added supabase dependency
 
+    // <<< MODIFIED savePreferences
     const savePreferences = useCallback(async (email: string, preferences: UserPreferences): Promise<void> => {
         console.log(`Saving preferences for ${email}...`, preferences);
         try {
-             const { error } = await supabase // Using supabase here
+             // <<< ADDED preference_update
+             const { error } = await supabase
                 .from('user_preferences')
-                .upsert({ user_email: email, preferences: preferences }, { onConflict: 'user_email' });
+                .upsert({
+                    user_email: email,
+                    preferences: preferences,
+                    preference_update: new Date().toISOString() // Set timestamp on save
+                }, { onConflict: 'user_email' });
 
              if (error) {
                  console.error('Supabase save preferences error:', error);
                  throw new Error(`Supabase save error: ${error.message}`);
              }
              console.log("Preferences saved successfully.");
+             setPreferenceUpdateTimestamp(new Date().toISOString()); // Update local state immediately
          } catch (error) {
              console.error("Caught error in savePreferences:", error);
              throw error;
@@ -187,7 +194,7 @@ function App() {
                 return;
             }
 
-            const { data, error } = await supabase // Using supabase here
+            const { data, error } = await supabase
                 .from('user_preferences')
                 .update(updateData)
                 .eq('user_email', email) // Use the correct email for the WHERE clause
@@ -219,15 +226,22 @@ function App() {
         }
     }, [showAppNotification, supabase]); // Added supabase dependency
 
+    // <<< MODIFIED deletePreferences
     const deletePreferences = useCallback(async (email: string): Promise<void> => {
         console.log(`Resetting preferences field for ${email}...`);
         try {
-            const { error } = await supabase // Using supabase here
+             // <<< ADDED preference_update
+            const { error } = await supabase
                 .from('user_preferences')
-                .update({ preferences: {} })
+                .update({
+                    preferences: {}, // Set preferences to empty
+                    preference_update: new Date().toISOString() // Update timestamp on reset
+                })
                 .eq('user_email', email);
+
             if (error) throw new Error(`Supabase reset error: ${error.message}`);
             console.log("Preferences field reset successfully.");
+            setPreferenceUpdateTimestamp(new Date().toISOString()); // Update local state immediately
         } catch (error) {
             console.error("Caught error in deletePreferences:", error);
             throw error;
@@ -241,7 +255,7 @@ function App() {
         try {
             const { error } = await supabase // Using supabase here
                 .from('user_preferences')
-                .update({ ispro: true })
+                .update({ ispro: true }) // Note: This doesn't update preference_update
                 .eq('user_email', email);
             if (error) throw new Error(`Failed to update account: ${error.message}`);
             setIsProUser(true); // Update local state BEFORE showing notification
@@ -301,6 +315,7 @@ function App() {
         setWatchlistNews(null);
         setSectorNews(null);
         setNarrativeNews(null);
+        setPreferenceUpdateTimestamp(null); // <<< RESET STATE on logout
         setCurrentPage('landing');
         setErrorMessage(null);
         setAppNotification(null);
@@ -341,6 +356,7 @@ function App() {
             setWatchlistNews(userData?.watchlist ?? null);
             setSectorNews(userData?.sector ?? null);
             setNarrativeNews(userData?.narrative ?? null);
+            setPreferenceUpdateTimestamp(userData?.preference_update ?? null); // <<< SET STATE from fetch
 
             // Update the ref *after* setting the new state
             prevIsProUserRef.current = userData?.ispro ?? false;
@@ -356,12 +372,7 @@ function App() {
                          preferences: {}, // Start with empty prefs
                          ispro: false,
                          isenterprise: false,
-                         // Initialize other fields if necessary, though defaults might handle it
-                         // telegramid: null,
-                         // tele_update_rate: null,
-                         // watchlist: null,
-                         // sector: null,
-                         // narrative: null,
+                         preference_update: null, // Explicitly null initially
                         }, { onConflict: 'user_email' }); // Use upsert just in case
                  }
                 setCurrentPage('onboarding');
@@ -401,8 +412,9 @@ function App() {
         setCurrentPage('loading');
         setLoadingMessage('Saving your preferences...');
         try {
-            await savePreferences(googleUser.email, preferences); // Using savePreferences here
+            await savePreferences(googleUser.email, preferences); // Using savePreferences here (updates timestamp)
             setUserPreferences(preferences);
+            // setPreferenceUpdateTimestamp is handled within savePreferences
             setCurrentPage('dashboard');
 
             setTimeout(() => {
@@ -440,8 +452,9 @@ function App() {
         setCurrentPage('loading');
         setLoadingMessage('Resetting preferences...');
         try {
-            await deletePreferences(googleUser.email); // Using deletePreferences here
+            await deletePreferences(googleUser.email); // Using deletePreferences here (updates timestamp)
             setUserPreferences(null);
+            // setPreferenceUpdateTimestamp is handled within deletePreferences
             setCurrentPage('onboarding');
             // Show different message depending on tier
             if (isProUser || isEnterpriseUser) {
@@ -482,7 +495,7 @@ function App() {
                  return (
                      <>
                          <Background />
-                         {/* Ensure all required props are passed to Dashboard */}
+                         {/* <<< ADDED preferenceUpdateTimestamp prop */}
                          <Dashboard
                              onEditPreferences={handleResetPreferencesRequest} // Uses deletePreferences
                              initialPreferences={userPreferences}
@@ -497,6 +510,7 @@ function App() {
                              watchlistNews={watchlistNews}
                              sectorNews={sectorNews}
                              narrativeNews={narrativeNews}
+                             preferenceUpdateTimestamp={preferenceUpdateTimestamp} // Pass the timestamp
                              showAppNotification={showAppNotification}
                          />
                      </>
