@@ -1,8 +1,11 @@
+// ================================================
+// FILE: src/components/Dashboard.tsx
+// ================================================
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
     Mail, Hand as BrandX, Send, Settings, LogOut, User, ChevronDown,
     ArrowUpRight, X as CloseIcon, FileText, Download, Loader2 as LoaderIcon, AlertTriangle, // Added AlertTriangle
-    AlertCircle, CheckCircle, Star, Zap, ListChecks, Shapes, Milestone, TrendingUp, ExternalLink, PlusCircle, DownloadCloud
+    AlertCircle, CheckCircle, Star, Zap, ListChecks, Shapes, Milestone, TrendingUp, ExternalLink, PlusCircle, DownloadCloud, RefreshCw // Added RefreshCw for timestamp
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
@@ -46,13 +49,13 @@ interface DashboardProps {
     onNavigateToUpgrade: () => void;
     telegramId: string | null;
     teleUpdateRate: number | null;
-    // ***** FIX 1: Update the function signature type *****
     onSaveTelegramDetails: (email: string, telegramId: string | null, teleUpdateRate: number | null) => Promise<void>; // Expects email, id, rate
     isPro: boolean;
     isEnterprise: boolean;
     watchlistNews: string | null;
     sectorNews: string | null;
     narrativeNews: string | null;
+    preferenceUpdateTimestamp: string | null; // <<< ADDED PROP
     showAppNotification: (message: string, type?: NotificationType, duration?: number) => void; // Receive notification function
 }
 
@@ -98,6 +101,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     watchlistNews,
     sectorNews,
     narrativeNews,
+    preferenceUpdateTimestamp, // <<< DESTRUCTURE PROP
     showAppNotification // Destructure notification function
 }) => {
     // State
@@ -249,7 +253,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
         // Timer logic is now handled by the useEffect hook watching telegramModalOpen
     };
 
-    // ***** FIX 2: Correctly call onSaveTelegramDetails with email *****
     const handleSaveTelegramDetails = async () => {
         // Button disabled state already handled by `telegramSaveButtonEnabled`
         if (!telegramSaveButtonEnabled || isSavingTelegram) return;
@@ -455,6 +458,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
         return null;
     };
 
+    // <<< HELPER FUNCTION to format timestamp
+    const formatTimestamp = (isoString: string | null): string => {
+        if (!isoString) return 'Never';
+        try {
+            return new Date(isoString).toLocaleString(undefined, {
+                dateStyle: 'medium',
+                timeStyle: 'short'
+            });
+        } catch (e) {
+            console.error("Error formatting timestamp:", e);
+            return 'Invalid Date';
+        }
+    };
 
     // Render
     return (
@@ -483,7 +499,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     </div>
                     {/* Right Buttons */}
                     <div className="flex flex-wrap items-center gap-2 sm:gap-4">
-                        <button onClick={onEditPreferences} className="flex items-center gap-2 px-3 py-2 sm:px-4 bg-gray-200 dark:bg-gray-700 rounded-lg shadow-sm hover:shadow-md transition-shadow text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 text-sm sm:text-base" title="Edit Preferences"> <Settings className="w-4 h-4 sm:w-5 sm:h-5" /> <span className="hidden sm:inline">Edit Preferences</span> </button>
+                        {/* <<< MODIFIED: Added container for Edit Preferences and Timestamp */}
+                        <div className="flex flex-col items-end gap-0.5">
+                            <button onClick={onEditPreferences} className="flex items-center gap-2 px-3 py-2 sm:px-4 bg-gray-200 dark:bg-gray-700 rounded-lg shadow-sm hover:shadow-md transition-shadow text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 text-sm sm:text-base" title="Edit Preferences"> <Settings className="w-4 h-4 sm:w-5 sm:h-5" /> <span className="hidden sm:inline">Edit Preferences</span> </button>
+                            {/* <<< ADDED Timestamp display */}
+                            {preferenceUpdateTimestamp && (
+                                <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1" title={`Preferences last updated: ${formatTimestamp(preferenceUpdateTimestamp)}`}>
+                                    <RefreshCw size={10} />
+                                    <span>Updated: {formatTimestamp(preferenceUpdateTimestamp)}</span>
+                                </div>
+                            )}
+                        </div>
+                        {/* End Modified Container */}
                         <div className="relative" ref={accountPopupRef}>
                             <button onClick={() => setIsAccountPopupOpen(!isAccountPopupOpen)} className="flex items-center gap-2 rounded-full border-2 border-transparent hover:border-gray-300 dark:hover:border-gray-600 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 p-0.5 transition-colors" title="Account">
                                 <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700 flex items-center justify-center border border-gray-300 dark:border-gray-600"> {googleUser?.picture ? ( <img src={googleUser.picture} alt={googleUser.name ?? 'User'} className="w-full h-full object-cover" /> ) : ( <User className="w-5 h-5 text-gray-500 dark:text-gray-400" /> )} </div>
