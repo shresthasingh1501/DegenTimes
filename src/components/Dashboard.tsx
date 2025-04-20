@@ -1,9 +1,7 @@
-// src/components/Dashboard.tsx
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
     Mail, Hand as BrandX, Send, Settings, LogOut, User, ChevronDown,
-    ArrowUpRight, X as CloseIcon, FileText, Download, Loader2 as LoaderIcon,
+    ArrowUpRight, X as CloseIcon, FileText, Download, Loader2 as LoaderIcon, AlertTriangle, // Added AlertTriangle
     AlertCircle, CheckCircle, Star, Zap, ListChecks, Shapes, Milestone, TrendingUp, ExternalLink, PlusCircle, DownloadCloud
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -82,6 +80,8 @@ const coingeckoApiHeaders = {
     ...(coingeckoApiKey ? { 'x-cg-api-key': coingeckoApiKey } : { 'x-cg-demo-api-key': 'CG-g4kQ9aQZgE5DsUr9W5jL787d' })
 };
 
+const TELEGRAM_SAVE_DELAY_MS = 5000; // 5 seconds
+
 // Dashboard Component
 export const Dashboard: React.FC<DashboardProps> = ({
     onEditPreferences,
@@ -112,7 +112,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const [isSavingTelegram, setIsSavingTelegram] = useState<boolean>(false);
     const [telegramSaveError, setTelegramSaveError] = useState<string | null>(null);
     const [emailInput, setEmailInput] = useState('');
-    // Removed dashboard-specific notification state, using App's now
     const accountPopupRef = useRef<HTMLDivElement>(null);
     const [activeNewsTab, setActiveNewsTab] = useState<NewsTab>('watchlist');
     const [trendingData, setTrendingData] = useState<TrendingData | null>(null);
@@ -122,6 +121,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const [requestTitle, setRequestTitle] = useState('');
     const [requestContents, setRequestContents] = useState('');
     const [isRequesting, setIsRequesting] = useState(false);
+    // State for Telegram save button delay
+    const [telegramSaveButtonEnabled, setTelegramSaveButtonEnabled] = useState(false);
+    const [telegramCountdown, setTelegramCountdown] = useState<number>(TELEGRAM_SAVE_DELAY_MS / 1000);
+    const telegramTimerId = useRef<NodeJS.Timeout | null>(null);
+    const countdownIntervalId = useRef<NodeJS.Timeout | null>(null);
 
     // Determine tier info
     const tier = getTierInfo(isPro, isEnterprise);
@@ -135,10 +139,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
     useEffect(() => {
         setTelegramIdInput(telegramId ?? '');
         setTeleRateInput(teleUpdateRate ?? 24);
     }, [telegramId, teleUpdateRate]);
+
     useEffect(() => {
         const fetchPdfDownloadUrl = async () => {
             setPdfUrlLoading(true);
@@ -187,6 +193,37 @@ export const Dashboard: React.FC<DashboardProps> = ({
         }
     }, [activeNewsTab, trendingData, trendingLoading]);
 
+    // Effect for Telegram modal save button delay and countdown
+    useEffect(() => {
+        if (telegramModalOpen) {
+            setTelegramSaveButtonEnabled(false); // Disable button initially
+            setTelegramCountdown(TELEGRAM_SAVE_DELAY_MS / 1000); // Reset countdown
+
+            // Start main timer to enable button
+            telegramTimerId.current = setTimeout(() => {
+                setTelegramSaveButtonEnabled(true);
+                if (countdownIntervalId.current) clearInterval(countdownIntervalId.current); // Clear countdown when main timer finishes
+                setTelegramCountdown(0); // Ensure countdown shows 0
+            }, TELEGRAM_SAVE_DELAY_MS);
+
+            // Start countdown timer for display
+            countdownIntervalId.current = setInterval(() => {
+                setTelegramCountdown((prev) => (prev > 0 ? prev - 1 : 0));
+            }, 1000);
+
+        } else {
+            // Cleanup if modal closes
+            if (telegramTimerId.current) clearTimeout(telegramTimerId.current);
+            if (countdownIntervalId.current) clearInterval(countdownIntervalId.current);
+            setTelegramSaveButtonEnabled(false); // Reset button state
+        }
+
+        // Cleanup function for when the component unmounts or modal closes
+        return () => {
+            if (telegramTimerId.current) clearTimeout(telegramTimerId.current);
+            if (countdownIntervalId.current) clearInterval(countdownIntervalId.current);
+        };
+    }, [telegramModalOpen]); // Re-run when modal open state changes
 
     // Handlers
     const handleDownloadClick = () => {
@@ -201,16 +238,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const handleUpgradeClick = () => { setIsAccountPopupOpen(false); onNavigateToUpgrade(); };
     const handleLogoutClick = () => { setIsAccountPopupOpen(false); onLogout(); };
     const handleSaveEmail = () => setEmailModalOpen(false);
+
     const openTelegramModal = () => {
         setIsSavingTelegram(false);
         setTelegramSaveError(null);
         setTelegramIdInput(telegramId ?? '');
         setTeleRateInput(teleUpdateRate ?? 24);
         setTelegramModalOpen(true);
+        // Timer logic is now handled by the useEffect hook watching telegramModalOpen
     };
 
     // Updated: Call App's save function which handles notifications
     const handleSaveTelegramDetails = async () => {
+        // Button disabled state already handled by `telegramSaveButtonEnabled`
+        if (!telegramSaveButtonEnabled || isSavingTelegram) return;
+
         setIsSavingTelegram(true);
         setTelegramSaveError(null);
         try {
@@ -259,11 +301,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
         if (!pdfContainer) {
             pdfContainer = document.createElement('div');
             pdfContainer.id = pdfRenderContainerId;
+            // Hide the container visually but keep it renderable
+            pdfContainer.style.position = 'absolute';
+            pdfContainer.style.left = '-9999px';
+            pdfContainer.style.top = 'auto';
+            pdfContainer.style.width = '800px'; // A fixed width often helps pdf generation
             document.body.appendChild(pdfContainer);
         }
 
         const markdownElement = (
-            <div className="prose prose-sm max-w-none p-10">
+            <div className="prose prose-sm max-w-none p-10 bg-white text-black"> {/* Added bg/text for render */}
                 <ReactMarkdown rehypePlugins={[rehypeRaw]}>
                     {markdownContent}
                 </ReactMarkdown>
@@ -271,7 +318,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         );
 
         ReactDOM.render(markdownElement, pdfContainer, async () => {
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise(resolve => setTimeout(resolve, 200)); // Slightly longer wait
             const pdf = new jsPDF('p', 'pt', 'a4');
             const targetElement = document.getElementById(pdfRenderContainerId);
             if (targetElement) {
@@ -279,16 +326,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     await pdf.html(targetElement, {
                          callback: function (doc) {
                              doc.save('personalized_news_brief.pdf');
+                             // Clean up after saving
                              ReactDOM.unmountComponentAtNode(targetElement);
                              targetElement.remove();
                          },
-                         x: 0, y: 0,
+                         x: 10, y: 10, // Margin
+                         html2canvas: {
+                             scale: 0.7 // Adjust scale if content overflows
+                         },
+                         // autoPaging: 'text' // Experiment if needed
+                         margin: [10, 10, 10, 10],
+                         width: 575, // A4 width in points minus margins (approx 595 total)
                          windowWidth: targetElement.scrollWidth,
-                         // autoPaging: 'text' // consider if needed
                      });
                  } catch (error) {
                      console.error("Error generating personalized PDF:", error);
                      showAppNotification("Failed to generate personalized brief PDF.", 'error'); // Use app notification
+                      // Clean up on error
                       ReactDOM.unmountComponentAtNode(targetElement);
                       targetElement.remove();
                  }
@@ -400,6 +454,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
                          <button onClick={() => setEmailModalOpen(true)} className="flex items-center gap-2 px-3 py-2 sm:px-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow-md transition-shadow text-gray-700 dark:text-gray-300 text-sm sm:text-base"> <Mail className="w-4 h-4 sm:w-5 sm:h-5" /> <span>Email Brief</span> </button>
                          <button onClick={openTelegramModal} className="flex items-center gap-2 px-3 py-2 sm:px-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow-md transition-shadow text-gray-700 dark:text-gray-300 text-sm sm:text-base"> <Send className="w-4 h-4 sm:w-5 sm:h-5" /> <span>Telegram Brief</span> </button>
                          <button onClick={() => setTwitterModalOpen(true)} className="flex items-center gap-2 px-3 py-2 sm:px-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow-md transition-shadow text-gray-700 dark:text-gray-300 text-sm sm:text-base"> <BrandX className="w-4 h-4 sm:w-5 sm:h-5" /> <span>X Updates</span> </button>
+                         {/* Download Personalized Brief Button - Only shown for Pro/Enterprise */}
+                         {showProFeatures && (watchlistNews || sectorNews || narrativeNews) && (
+                            <button
+                                onClick={handleDownloadPersonalizedBrief}
+                                className="flex items-center gap-2 px-3 py-2 sm:px-4 bg-green-100 dark:bg-green-900 rounded-lg shadow-sm hover:shadow-md transition-shadow text-green-700 dark:text-green-300 text-sm sm:text-base hover:bg-green-200 dark:hover:bg-green-800"
+                                title="Download Personalized News Brief as PDF"
+                            >
+                                <DownloadCloud className="w-4 h-4 sm:w-5 sm:h-5" />
+                                <span>Personalized PDF</span>
+                            </button>
+                         )}
                     </div>
                     {/* Right Buttons */}
                     <div className="flex flex-wrap items-center gap-2 sm:gap-4">
@@ -523,6 +588,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
             <Modal isOpen={telegramModalOpen} onClose={() => setTelegramModalOpen(false)} title="Set Up Telegram Brief">
                  <div className="space-y-5">
+                    {/* Instruction Box */}
+                    <div className="p-3 rounded-md bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-700 flex items-start gap-2.5">
+                        <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" aria-hidden="true" />
+                        <p className="text-sm text-yellow-800 dark:text-yellow-300">
+                            <strong>Important:</strong> To receive Telegram briefs, please first send any message (e.g., "Hi") to <strong className="font-mono">+917095417327</strong> on Telegram. This allows our bot to send messages back to you.
+                        </p>
+                    </div>
+                    {/* Input Fields */}
                     <div>
                          <label htmlFor="telegramId" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Telegram User ID</label>
                          <input id="telegramId" type="text" value={telegramIdInput} onChange={(e) => setTelegramIdInput(e.target.value)} placeholder="Your Telegram User ID or @username" disabled={isSavingTelegram} className="w-full px-3 py-2 rounded border dark:border-gray-600 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50 disabled:bg-gray-100 dark:disabled:bg-gray-600" />
@@ -533,11 +606,22 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         <input id="teleUpdateRate" type="range" min="1" max="24" step="1" value={teleRateInput} onChange={(e) => setTeleRateInput(parseInt(e.target.value, 10))} disabled={isSavingTelegram} className="w-full h-2 bg-gray-200 dark:bg-gray-600 rounded-lg appearance-none cursor-pointer accent-purple-600 dark:accent-purple-500 disabled:opacity-50 disabled:cursor-not-allowed" />
                         <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1 px-1"> <span>1 hr</span> <span>12 hrs</span> <span>24 hrs</span> </div>
                     </div>
-                    <button onClick={handleSaveTelegramDetails} disabled={isSavingTelegram} className="w-full flex justify-center items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-60 disabled:cursor-not-allowed">
-                        {isSavingTelegram ? ( <><LoaderIcon className="w-4 h-4 animate-spin" /> Saving...</> ) : ( 'Save Telegram Settings' )}
+                    {/* Save Button with Delay Logic */}
+                    <button
+                        onClick={handleSaveTelegramDetails}
+                        disabled={isSavingTelegram || !telegramSaveButtonEnabled}
+                        className="w-full flex justify-center items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-60 disabled:cursor-not-allowed transition-opacity"
+                    >
+                        {isSavingTelegram ? (
+                            <> <LoaderIcon className="w-4 h-4 animate-spin" /> Saving... </>
+                        ) : !telegramSaveButtonEnabled ? (
+                            `Please wait... (${telegramCountdown}s)` // Show countdown
+                        ) : (
+                            'Save Telegram Settings'
+                        )}
                     </button>
+                    {/* Save Error Message */}
                     {telegramSaveError && ( <p className="text-sm text-red-600 dark:text-red-400 text-center mt-2">{telegramSaveError}</p> )}
-                    <p className="text-xs text-gray-500 dark:text-gray-400 pt-2 text-center border-t dark:border-gray-700"> Note: You may need to start a chat with our bot first. <a href="#" className="text-blue-500 hover:underline">Find bot (link coming soon)</a> </p>
                  </div>
             </Modal>
 
