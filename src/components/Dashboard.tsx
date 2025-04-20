@@ -46,7 +46,8 @@ interface DashboardProps {
     onNavigateToUpgrade: () => void;
     telegramId: string | null;
     teleUpdateRate: number | null;
-    onSaveTelegramDetails: (telegramId: string | null, teleUpdateRate: number | null) => Promise<void>; // Expects promise from App
+    // ***** FIX 1: Update the function signature type *****
+    onSaveTelegramDetails: (email: string, telegramId: string | null, teleUpdateRate: number | null) => Promise<void>; // Expects email, id, rate
     isPro: boolean;
     isEnterprise: boolean;
     watchlistNews: string | null;
@@ -87,7 +88,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     onEditPreferences,
     initialPreferences,
     onLogout,
-    googleUser,
+    googleUser, // Needed for email
     onNavigateToUpgrade,
     telegramId,
     teleUpdateRate,
@@ -248,17 +249,31 @@ export const Dashboard: React.FC<DashboardProps> = ({
         // Timer logic is now handled by the useEffect hook watching telegramModalOpen
     };
 
-    // Updated: Call App's save function which handles notifications
+    // ***** FIX 2: Correctly call onSaveTelegramDetails with email *****
     const handleSaveTelegramDetails = async () => {
         // Button disabled state already handled by `telegramSaveButtonEnabled`
         if (!telegramSaveButtonEnabled || isSavingTelegram) return;
+
+        // Add a check for googleUser and email for safety
+        if (!googleUser?.email) {
+            console.error("User email not available in Dashboard component when trying to save Telegram details.");
+            setTelegramSaveError("User information is missing. Cannot save settings.");
+            setIsSavingTelegram(false); // Stop loading state if applicable
+            // Optionally show an app notification too
+            showAppNotification("Error: User information missing.", 'error');
+            return;
+        }
 
         setIsSavingTelegram(true);
         setTelegramSaveError(null);
         try {
             const rateToSave = Math.max(1, Math.min(24, teleRateInput));
-            await onSaveTelegramDetails(telegramIdInput.trim(), rateToSave); // Calls App's function
-            setTelegramModalOpen(false); // Close modal on success (handled by App notification)
+            const idToSave = telegramIdInput.trim() || null; // Ensure empty string becomes null
+
+            // Pass the user's email as the first argument
+            await onSaveTelegramDetails(googleUser.email, idToSave, rateToSave);
+
+            setTelegramModalOpen(false); // Close modal on success (App handles notification)
         } catch (error: any) {
              // Error notification is handled by App's saveTelegramDetails
              setTelegramSaveError(`Failed to save: ${error.message || 'Unknown error'}`); // Still show error in modal
