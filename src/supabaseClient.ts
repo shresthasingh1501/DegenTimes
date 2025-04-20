@@ -16,7 +16,8 @@ export interface SupabaseUserData {
   user_email: string;
   preferences: UserPreferences | null;
   created_at?: string;
-  updated_at?: string;
+  updated_at?: string; // General row update timestamp (managed by Supabase usually)
+  preference_update?: string | null; // <<< ADDED: Specific timestamp for preference changes
   telegramid?: string | null;
   tele_update_rate?: number | null;
   ispro?: boolean | null;
