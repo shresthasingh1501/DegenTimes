@@ -81,8 +81,8 @@ function App() {
     const [currentPage, setCurrentPage] = useState<CurrentPage>('landing');
     const [loadingMessage, setLoadingMessage] = useState('Loading...');
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
-    const [telegramId, setTelegramId] = useState<string | null>(null);
-    const [teleUpdateRate, setTeleUpdateRate] = useState<number | null>(null);
+    const [telegramId, setTelegramId] = useState<string | null>(null); // State for TG ID
+    const [teleUpdateRate, setTeleUpdateRate] = useState<number | null>(null); // State for TG Rate
     const [isProUser, setIsProUser] = useState<boolean>(false);
     const [isEnterpriseUser, setIsEnterpriseUser] = useState<boolean>(false);
     const [watchlistNews, setWatchlistNews] = useState<string | null>(null);
@@ -112,7 +112,7 @@ function App() {
                 .eq('user_email', email)
                 .single();
 
-            if (error && status !== 406) {
+            if (error && status !== 406) { // 406 (Not Acceptable) means no row found, which is okay
                 console.error('Supabase fetch user data error:', error);
                 throw new Error(`Supabase fetch error: ${error.message}`);
             }
@@ -164,22 +164,22 @@ function App() {
     }, [supabase]); // Added supabase dependency
 
     const saveTelegramDetails = useCallback(async (email: string, newTelegramId: string | null, newRate: number | null): Promise<void> => {
-        console.log(`Saving Telegram details for ${email}...`, { telegramId: newTelegramId, rate: newRate });
+        console.log(`Saving Telegram details for ${email}...`, { telegramId: newTelegramId, rate: newRate }); // Log correct email
         if (!email) {
             console.error("User email is missing in saveTelegramDetails!");
             throw new Error("User email is missing, cannot save Telegram details.");
         }
         try {
             const updateData: Partial<Pick<SupabaseUserData, 'telegramid' | 'tele_update_rate'>> = {};
-             if (newTelegramId !== undefined) updateData.telegramid = newTelegramId;
+             // Ensure empty strings become null in DB
+             if (newTelegramId !== undefined) updateData.telegramid = newTelegramId || null;
+             // Handle rate
              if (newRate !== undefined && newRate !== null) updateData.tele_update_rate = newRate;
-             else if (newRate === null) updateData.tele_update_rate = null;
+             else if (newRate === null) updateData.tele_update_rate = null; // Explicitly handle setting rate to null
 
-            // --- DEBUG LOGS ---
             console.log('Attempting Supabase update with:');
-            console.log('Email:', email);
+            console.log('Email:', email); // Should log the actual email now
             console.log('Update Data:', updateData);
-            // --- END DEBUG LOGS ---
 
             if (Object.keys(updateData).length === 0) {
                 console.warn("No data to update for Telegram details.");
@@ -190,12 +190,10 @@ function App() {
             const { data, error } = await supabase // Using supabase here
                 .from('user_preferences')
                 .update(updateData)
-                .eq('user_email', email)
+                .eq('user_email', email) // Use the correct email for the WHERE clause
                 .select(); // Requesting data back
 
-            // --- MORE DEBUG LOGS ---
             console.log('Supabase update response:', { data, error });
-            // --- END MORE DEBUG LOGS ---
 
             if (error) {
                 console.error('Supabase save Telegram details error:', error);
@@ -204,18 +202,20 @@ function App() {
 
             if (data && data.length > 0) {
                  console.log("Telegram details saved successfully in Supabase for:", data[0].user_email);
+                 // **** Ensure local state is updated with the values passed to the function ****
                  setTelegramId(newTelegramId ?? null);
                  setTeleUpdateRate(newRate ?? null);
                  showAppNotification("Telegram settings updated successfully!", 'success');
             } else {
+                 // This warning should be less frequent now
                  console.warn("Supabase update ran without error, but no rows were updated. Was the email correct?");
-                 showAppNotification("Could not find user record to update Telegram settings.", 'error');
+                 showAppNotification("Could not find user record to update Telegram settings. Please ensure your account exists.", 'error');
             }
 
         } catch (error) {
             console.error("Caught error in saveTelegramDetails:", error);
             showAppNotification(`Failed to save Telegram settings: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
-            throw error;
+            throw error; // Re-throw so Dashboard can potentially handle it in the modal too
         }
     }, [showAppNotification, supabase]); // Added supabase dependency
 
@@ -332,9 +332,10 @@ function App() {
             // Store previous pro status *before* updating state
             const previousProStatus = isProUser;
 
+            // Set all user data states
             setUserPreferences(userData?.preferences ?? null);
-            setTelegramId(userData?.telegramid ?? null);
-            setTeleUpdateRate(userData?.tele_update_rate ?? null);
+            setTelegramId(userData?.telegramid ?? null);          // Ensure this is set
+            setTeleUpdateRate(userData?.tele_update_rate ?? null); // Ensure this is set
             setIsProUser(userData?.ispro ?? false);
             setIsEnterpriseUser(userData?.isenterprise ?? false);
             setWatchlistNews(userData?.watchlist ?? null);
@@ -344,7 +345,7 @@ function App() {
             // Update the ref *after* setting the new state
             prevIsProUserRef.current = userData?.ispro ?? false;
 
-
+            // Determine next page based on preferences
             if (userData?.preferences) {
                 setCurrentPage('dashboard');
             } else {
@@ -352,10 +353,16 @@ function App() {
                      console.log("No user record found, creating one before onboarding...");
                      await supabase.from('user_preferences').upsert({ // Using supabase directly
                          user_email: user.email,
-                         preferences: {},
+                         preferences: {}, // Start with empty prefs
                          ispro: false,
-                         isenterprise: false
-                        });
+                         isenterprise: false,
+                         // Initialize other fields if necessary, though defaults might handle it
+                         // telegramid: null,
+                         // tele_update_rate: null,
+                         // watchlist: null,
+                         // sector: null,
+                         // narrative: null,
+                        }, { onConflict: 'user_email' }); // Use upsert just in case
                  }
                 setCurrentPage('onboarding');
             }
@@ -475,15 +482,16 @@ function App() {
                  return (
                      <>
                          <Background />
+                         {/* Ensure all required props are passed to Dashboard */}
                          <Dashboard
                              onEditPreferences={handleResetPreferencesRequest} // Uses deletePreferences
                              initialPreferences={userPreferences}
                              onLogout={handleLogout}
-                             googleUser={googleUser}
+                             googleUser={googleUser} // Pass googleUser down
                              onNavigateToUpgrade={showUpgradePage}
-                             telegramId={telegramId}
-                             teleUpdateRate={teleUpdateRate}
-                             onSaveTelegramDetails={saveTelegramDetails} // Uses supabase
+                             telegramId={telegramId} // Pass current state
+                             teleUpdateRate={teleUpdateRate} // Pass current state
+                             onSaveTelegramDetails={saveTelegramDetails} // Pass the callback
                              isPro={isProUser}
                              isEnterprise={isEnterpriseUser}
                              watchlistNews={watchlistNews}
