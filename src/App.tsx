@@ -1,5 +1,8 @@
+// ================================================
+// FILE: src/App.tsx
+// ================================================
 import React, { useState, useEffect, Suspense, useCallback, useRef } from 'react';
-import { Moon, Sun, X as CloseIcon, CheckCircle, AlertCircle } from 'lucide-react';
+import { Moon, Sun, X as CloseIcon, CheckCircle, AlertCircle, PartyPopper, Clock, Award } from 'lucide-react'; // Added new icons
 import { useAuthStore } from './store/auth';
 import { OnboardingWizard } from './components/OnboardingWizard';
 import { Dashboard } from './components/Dashboard';
@@ -8,7 +11,7 @@ import { UpgradePage } from './components/UpgradePage';
 import { useGoogleLogin, googleLogout } from '@react-oauth/google';
 import axios from 'axios';
 import clsx from 'clsx';
-import { supabase, SupabaseUserData, UserPreferences } from './supabaseClient'; // Ensure supabase is imported
+import { supabase, SupabaseUserData, UserPreferences } from './supabaseClient';
 
 export interface GoogleUserProfile {
     id: string;
@@ -33,7 +36,7 @@ Background.displayName = 'MemoizedBackground';
 
 const VALID_REDEEM_CODE = "BOUNTY";
 
-// Notification Component
+// Notification Component (Top Banner)
 interface AppNotificationProps {
     message: string;
     type: NotificationType;
@@ -63,6 +66,100 @@ const AppNotification: React.FC<AppNotificationProps> = ({ message, type, onClos
     );
 };
 
+// <<< NEW: Upgrade Success Modal Component >>>
+interface UpgradeSuccessModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+}
+const UpgradeSuccessModal: React.FC<UpgradeSuccessModalProps> = ({ isOpen, onClose }) => {
+    const [canClose, setCanClose] = useState(false);
+    const [countdown, setCountdown] = useState(5);
+    const timerRef = useRef<NodeJS.Timeout | null>(null);
+    const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+    useEffect(() => {
+        if (isOpen) {
+            setCanClose(false); // Disable closing initially
+            setCountdown(5); // Reset countdown
+
+            // Timer to enable closing after 5 seconds
+            timerRef.current = setTimeout(() => {
+                setCanClose(true);
+                if (countdownIntervalRef.current) {
+                    clearInterval(countdownIntervalRef.current); // Stop countdown interval
+                }
+                setCountdown(0); // Ensure countdown shows 0
+            }, 5000);
+
+            // Interval to update countdown display
+            countdownIntervalRef.current = setInterval(() => {
+                setCountdown((prev) => (prev > 0 ? prev - 1 : 0));
+            }, 1000);
+
+        } else {
+            // Cleanup if modal closes or component unmounts
+            if (timerRef.current) clearTimeout(timerRef.current);
+            if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+        }
+
+        // Cleanup function
+        return () => {
+            if (timerRef.current) clearTimeout(timerRef.current);
+            if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+        };
+    }, [isOpen]); // Re-run effect when isOpen changes
+
+    const handleCloseAttempt = () => {
+        if (canClose) {
+            onClose();
+        }
+        // If !canClose, do nothing
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[100] p-4">
+            <div className="bg-gradient-to-br from-purple-600 to-blue-600 rounded-xl shadow-2xl w-full max-w-md relative text-white overflow-hidden">
+                {/* Background Sparkles (Optional Enhancement) */}
+                <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.3) 1px, transparent 1px)', backgroundSize: '15px 15px' }}></div>
+
+                <div className="p-8 text-center relative z-10">
+                    <PartyPopper size={60} className="mx-auto mb-5 text-yellow-300" />
+                    <h2 className="text-3xl font-bold mb-3">Congratulations!</h2>
+                    <p className="text-xl mb-6 flex items-center justify-center gap-2">
+                        <Award size={20} /> You now have <span className="font-semibold">Pro Access!</span>
+                    </p>
+
+                    <div className="bg-white/10 dark:bg-black/20 p-4 rounded-lg mb-6 text-sm flex items-start gap-3 text-left">
+                        <Clock size={30} className="text-blue-300 flex-shrink-0 mt-1" />
+                        <div>
+                            <p className="font-semibold mb-1">What happens next?</p>
+                            <p>Your first personalized news brief based on your preferences is being generated.</p>
+                            <p className="mt-1">This usually takes <span className="font-semibold">15-20 minutes</span>. Please check back on your dashboard soon!</p>
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={handleCloseAttempt}
+                        disabled={!canClose}
+                        className={clsx(
+                            "w-full px-6 py-3 rounded-lg font-semibold transition-all duration-300",
+                            canClose
+                                ? "bg-white text-purple-700 hover:bg-gray-100"
+                                : "bg-white/40 text-white/70 cursor-not-allowed"
+                        )}
+                        aria-label={canClose ? "Close" : `Close (available in ${countdown}s)`}
+                    >
+                        {canClose ? "Got it!" : `Please wait (${countdown}s)`}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+// <<< END: Upgrade Success Modal Component >>>
+
 
 function App() {
     const [isDark, setIsDark] = useState(() => {
@@ -76,17 +173,18 @@ function App() {
     const [currentPage, setCurrentPage] = useState<CurrentPage>('landing');
     const [loadingMessage, setLoadingMessage] = useState('Loading...');
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
-    const [telegramId, setTelegramId] = useState<string | null>(null); // State for TG ID
-    const [teleUpdateRate, setTeleUpdateRate] = useState<number | null>(null); // State for TG Rate
+    const [telegramId, setTelegramId] = useState<string | null>(null);
+    const [teleUpdateRate, setTeleUpdateRate] = useState<number | null>(null);
     const [isProUser, setIsProUser] = useState<boolean>(false);
     const [isEnterpriseUser, setIsEnterpriseUser] = useState<boolean>(false);
     const [watchlistNews, setWatchlistNews] = useState<string | null>(null);
     const [sectorNews, setSectorNews] = useState<string | null>(null);
     const [narrativeNews, setNarrativeNews] = useState<string | null>(null);
-    const [preferenceUpdateTimestamp, setPreferenceUpdateTimestamp] = useState<string | null>(null); // <<< ADDED STATE
+    const [preferenceUpdateTimestamp, setPreferenceUpdateTimestamp] = useState<string | null>(null);
     const [appNotification, setAppNotification] = useState<{ message: string; type: NotificationType } | null>(null);
     const appNotificationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const prevIsProUserRef = useRef<boolean>(isProUser); // Ref to track previous pro status
+    const prevIsProUserRef = useRef<boolean>(isProUser);
+    const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState<boolean>(false); // <<< ADDED STATE for new modal
 
     const showAppNotification = useCallback((message: string, type: NotificationType = 'info', duration: number = 3000) => {
         if (appNotificationTimeoutRef.current) {
@@ -99,18 +197,16 @@ function App() {
         }, duration);
     }, []);
 
-    // <<< MODIFIED fetchUserData
     const fetchUserData = useCallback(async (email: string): Promise<Partial<SupabaseUserData> | null> => {
         console.log(`Fetching user data for ${email}...`);
         try {
-            // <<< ADDED 'preference_update' to select
             const { data, error, status } = await supabase
                 .from('user_preferences')
                 .select('preferences, telegramid, tele_update_rate, ispro, isenterprise, watchlist, sector, narrative, preference_update')
                 .eq('user_email', email)
                 .single();
 
-            if (error && status !== 406) { // 406 (Not Acceptable) means no row found, which is okay
+            if (error && status !== 406) {
                 console.error('Supabase fetch user data error:', error);
                 throw new Error(`Supabase fetch error: ${error.message}`);
             }
@@ -123,7 +219,6 @@ function App() {
                 } else if (data.preferences) {
                      console.log("Fetched preferences are empty or invalid:", data.preferences);
                 }
-                // <<< ADDED preference_update to return object
                 return {
                     preferences: validPreferences,
                     telegramid: data.telegramid ?? null,
@@ -133,7 +228,7 @@ function App() {
                     watchlist: data.watchlist ?? null,
                     sector: data.sector ?? null,
                     narrative: data.narrative ?? null,
-                    preference_update: data.preference_update ?? null, // Add this
+                    preference_update: data.preference_update ?? null,
                 };
             } else {
                 console.log("No user data found for user.");
@@ -143,19 +238,17 @@ function App() {
              console.error("Caught error in fetchUserData:", error);
              throw error;
         }
-    }, [supabase]); // Added supabase dependency
+    }, [supabase]);
 
-    // <<< MODIFIED savePreferences
     const savePreferences = useCallback(async (email: string, preferences: UserPreferences): Promise<void> => {
         console.log(`Saving preferences for ${email}...`, preferences);
         try {
-             // <<< ADDED preference_update
              const { error } = await supabase
                 .from('user_preferences')
                 .upsert({
                     user_email: email,
                     preferences: preferences,
-                    preference_update: new Date().toISOString() // Set timestamp on save
+                    preference_update: new Date().toISOString()
                 }, { onConflict: 'user_email' });
 
              if (error) {
@@ -163,29 +256,27 @@ function App() {
                  throw new Error(`Supabase save error: ${error.message}`);
              }
              console.log("Preferences saved successfully.");
-             setPreferenceUpdateTimestamp(new Date().toISOString()); // Update local state immediately
+             setPreferenceUpdateTimestamp(new Date().toISOString());
          } catch (error) {
              console.error("Caught error in savePreferences:", error);
              throw error;
          }
-    }, [supabase]); // Added supabase dependency
+    }, [supabase]);
 
     const saveTelegramDetails = useCallback(async (email: string, newTelegramId: string | null, newRate: number | null): Promise<void> => {
-        console.log(`Saving Telegram details for ${email}...`, { telegramId: newTelegramId, rate: newRate }); // Log correct email
+        console.log(`Saving Telegram details for ${email}...`, { telegramId: newTelegramId, rate: newRate });
         if (!email) {
             console.error("User email is missing in saveTelegramDetails!");
             throw new Error("User email is missing, cannot save Telegram details.");
         }
         try {
             const updateData: Partial<Pick<SupabaseUserData, 'telegramid' | 'tele_update_rate'>> = {};
-             // Ensure empty strings become null in DB
              if (newTelegramId !== undefined) updateData.telegramid = newTelegramId || null;
-             // Handle rate
              if (newRate !== undefined && newRate !== null) updateData.tele_update_rate = newRate;
-             else if (newRate === null) updateData.tele_update_rate = null; // Explicitly handle setting rate to null
+             else if (newRate === null) updateData.tele_update_rate = null;
 
             console.log('Attempting Supabase update with:');
-            console.log('Email:', email); // Should log the actual email now
+            console.log('Email:', email);
             console.log('Update Data:', updateData);
 
             if (Object.keys(updateData).length === 0) {
@@ -197,8 +288,8 @@ function App() {
             const { data, error } = await supabase
                 .from('user_preferences')
                 .update(updateData)
-                .eq('user_email', email) // Use the correct email for the WHERE clause
-                .select(); // Requesting data back
+                .eq('user_email', email)
+                .select();
 
             console.log('Supabase update response:', { data, error });
 
@@ -209,12 +300,10 @@ function App() {
 
             if (data && data.length > 0) {
                  console.log("Telegram details saved successfully in Supabase for:", data[0].user_email);
-                 // **** Ensure local state is updated with the values passed to the function ****
                  setTelegramId(newTelegramId ?? null);
                  setTeleUpdateRate(newRate ?? null);
                  showAppNotification("Telegram settings updated successfully!", 'success');
             } else {
-                 // This warning should be less frequent now
                  console.warn("Supabase update ran without error, but no rows were updated. Was the email correct?");
                  showAppNotification("Could not find user record to update Telegram settings. Please ensure your account exists.", 'error');
             }
@@ -222,50 +311,56 @@ function App() {
         } catch (error) {
             console.error("Caught error in saveTelegramDetails:", error);
             showAppNotification(`Failed to save Telegram settings: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
-            throw error; // Re-throw so Dashboard can potentially handle it in the modal too
+            throw error;
         }
-    }, [showAppNotification, supabase]); // Added supabase dependency
+    }, [showAppNotification, supabase]);
 
-    // <<< MODIFIED deletePreferences
     const deletePreferences = useCallback(async (email: string): Promise<void> => {
         console.log(`Resetting preferences field for ${email}...`);
         try {
-             // <<< ADDED preference_update
             const { error } = await supabase
                 .from('user_preferences')
                 .update({
-                    preferences: {}, // Set preferences to empty
-                    preference_update: new Date().toISOString() // Update timestamp on reset
+                    preferences: {},
+                    preference_update: new Date().toISOString()
                 })
                 .eq('user_email', email);
 
             if (error) throw new Error(`Supabase reset error: ${error.message}`);
             console.log("Preferences field reset successfully.");
-            setPreferenceUpdateTimestamp(new Date().toISOString()); // Update local state immediately
+            setPreferenceUpdateTimestamp(new Date().toISOString());
         } catch (error) {
             console.error("Caught error in deletePreferences:", error);
             throw error;
         }
-    }, [supabase]); // Added supabase dependency
+    }, [supabase]);
 
+    // <<< MODIFIED redeemProCode to use the new modal >>>
     const redeemProCode = useCallback(async (email: string, enteredCode: string): Promise<void> => {
         console.log(`Attempting to redeem code "${enteredCode}" for ${email}`);
         if (enteredCode !== VALID_REDEEM_CODE) throw new Error("Invalid code entered.");
         console.log("Valid code entered, updating user to Pro...");
         try {
-            const { error } = await supabase // Using supabase here
+            const { error } = await supabase
                 .from('user_preferences')
-                .update({ ispro: true }) // Note: This doesn't update preference_update
+                .update({ ispro: true })
                 .eq('user_email', email);
             if (error) throw new Error(`Failed to update account: ${error.message}`);
-            setIsProUser(true); // Update local state BEFORE showing notification
-            showAppNotification("Code redeemed successfully! You now have Pro access.", 'success', 5000);
+
+            setIsProUser(true); // Update local state
             console.log("User successfully updated to Pro.");
+
+            // --- Show the new upgrade success modal ---
+            setIsUpgradeModalOpen(true);
+            // --- Don't show the top banner for this specific event ---
+            // showAppNotification("Code redeemed successfully! You now have Pro access.", 'success', 5000);
+
         } catch (error) {
             console.error("Caught error in redeemProCode:", error);
-            throw error; // Let UpgradePage handle modal error message
+            // Re-throw so UpgradePage can handle showing the error *within its own modal*
+            throw error;
         }
-    }, [showAppNotification, supabase]); // Added supabase dependency
+    }, [supabase]); // Removed showAppNotification dependency, added setIsUpgradeModalOpen
 
     useEffect(() => {
         console.log("App mounted/page changed. Current state:", currentPage);
@@ -285,22 +380,24 @@ function App() {
         return () => { if (appNotificationTimeoutRef.current) clearTimeout(appNotificationTimeoutRef.current); };
     }, []);
 
-    // Effect to show notification when user becomes Pro and news is empty
+    // Effect to show *TOP BANNER* notification if user *logs in* and is Pro, but news is empty
+    // This is DIFFERENT from the upgrade modal which shows immediately on redemption.
     useEffect(() => {
         const wasPro = prevIsProUserRef.current;
-        if (isProUser && !wasPro) { // Changed from not Pro to Pro
-            if (!watchlistNews && !sectorNews && !narrativeNews) {
-                // Only show if personalized news data is currently empty
-                showAppNotification(
-                    "Welcome to Pro! Your personalized news feed will be generated soon (usually within 15-20 minutes).",
-                    'info',
-                    7000
-                );
+        if (isProUser && !wasPro) { // Just became Pro (could be via login if DB updated elsewhere)
+            // Only show the *banner* if the upgrade modal isn't already showing
+            // And only if personalized news data is currently empty
+            if (!isUpgradeModalOpen && !watchlistNews && !sectorNews && !narrativeNews) {
+                 showAppNotification(
+                     "Welcome to Pro! Your personalized news feed will be generated soon (usually within 15-20 minutes).",
+                     'info',
+                     7000
+                 );
             }
         }
         // Update the ref for the next render
         prevIsProUserRef.current = isProUser;
-    }, [isProUser, watchlistNews, sectorNews, narrativeNews, showAppNotification]); // Dependencies
+    }, [isProUser, watchlistNews, sectorNews, narrativeNews, showAppNotification, isUpgradeModalOpen]); // Added isUpgradeModalOpen dependency
 
 
     const handleLogout = useCallback(() => {
@@ -315,11 +412,12 @@ function App() {
         setWatchlistNews(null);
         setSectorNews(null);
         setNarrativeNews(null);
-        setPreferenceUpdateTimestamp(null); // <<< RESET STATE on logout
+        setPreferenceUpdateTimestamp(null);
         setCurrentPage('landing');
         setErrorMessage(null);
         setAppNotification(null);
         if (appNotificationTimeoutRef.current) clearTimeout(appNotificationTimeoutRef.current);
+        setIsUpgradeModalOpen(false); // Ensure modal is closed on logout
         console.log("User logged out");
     }, [setIsAuthenticated]);
 
@@ -342,38 +440,33 @@ function App() {
             setIsAuthenticated(true);
 
             setLoadingMessage('Checking preferences & settings...');
-            const userData = await fetchUserData(user.email); // Using fetchUserData here
+            const userData = await fetchUserData(user.email);
 
-            // Store previous pro status *before* updating state
-            const previousProStatus = isProUser;
+            // Update the ref *before* setting new state to track if they *just* became Pro
+            prevIsProUserRef.current = userData?.ispro ?? false;
 
-            // Set all user data states
             setUserPreferences(userData?.preferences ?? null);
-            setTelegramId(userData?.telegramid ?? null);          // Ensure this is set
-            setTeleUpdateRate(userData?.tele_update_rate ?? null); // Ensure this is set
+            setTelegramId(userData?.telegramid ?? null);
+            setTeleUpdateRate(userData?.tele_update_rate ?? null);
             setIsProUser(userData?.ispro ?? false);
             setIsEnterpriseUser(userData?.isenterprise ?? false);
             setWatchlistNews(userData?.watchlist ?? null);
             setSectorNews(userData?.sector ?? null);
             setNarrativeNews(userData?.narrative ?? null);
-            setPreferenceUpdateTimestamp(userData?.preference_update ?? null); // <<< SET STATE from fetch
+            setPreferenceUpdateTimestamp(userData?.preference_update ?? null);
 
-            // Update the ref *after* setting the new state
-            prevIsProUserRef.current = userData?.ispro ?? false;
-
-            // Determine next page based on preferences
             if (userData?.preferences) {
                 setCurrentPage('dashboard');
             } else {
                  if (!userData) {
                      console.log("No user record found, creating one before onboarding...");
-                     await supabase.from('user_preferences').upsert({ // Using supabase directly
+                     await supabase.from('user_preferences').upsert({
                          user_email: user.email,
-                         preferences: {}, // Start with empty prefs
+                         preferences: {},
                          ispro: false,
                          isenterprise: false,
-                         preference_update: null, // Explicitly null initially
-                        }, { onConflict: 'user_email' }); // Use upsert just in case
+                         preference_update: null,
+                        }, { onConflict: 'user_email' });
                  }
                 setCurrentPage('onboarding');
             }
@@ -382,9 +475,9 @@ function App() {
             console.error("Error during login/data check:", error);
             setErrorMessage(`Login failed: ${error.message || 'Unknown error'}. Please try again.`);
             setCurrentPage('error');
-            handleLogout();
+            handleLogout(); // Use handleLogout for cleanup
         }
-    }, [fetchUserData, setIsAuthenticated, handleLogout, isProUser, supabase]); // Added supabase dependency
+    }, [fetchUserData, setIsAuthenticated, handleLogout, supabase]);
 
     const handleGoogleLoginError = useCallback((error: any) => {
         console.error("Google Login Failed:", error);
@@ -412,19 +505,22 @@ function App() {
         setCurrentPage('loading');
         setLoadingMessage('Saving your preferences...');
         try {
-            await savePreferences(googleUser.email, preferences); // Using savePreferences here (updates timestamp)
+            await savePreferences(googleUser.email, preferences);
             setUserPreferences(preferences);
-            // setPreferenceUpdateTimestamp is handled within savePreferences
             setCurrentPage('dashboard');
 
+            // Use setTimeout to ensure state update completes before showing notification
             setTimeout(() => {
                  if (isProUser || isEnterpriseUser) {
+                     // Use top banner here, as the big modal is only for initial upgrade redemption
                      if (wasAlreadySetup) {
                           showAppNotification(
                               "Preferences updated! Your personalized brief will update within a few hours. Upgrade to Enterprise for instant changes.",
                               'info', 7000
                           );
                      } else {
+                          // This case might be redundant if the useEffect handles the "Welcome to Pro" banner
+                          // But let's keep a success message for saving prefs
                           showAppNotification(
                               "Preferences saved! Your first personalized brief will be ready in 15-20 minutes.",
                               'success', 5000
@@ -441,7 +537,7 @@ function App() {
             setCurrentPage('error');
             showAppNotification(`Failed to save preferences: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
         }
-    }, [googleUser, savePreferences, showAppNotification, isProUser, isEnterpriseUser, userPreferences]); // Added dependencies
+    }, [googleUser, savePreferences, showAppNotification, isProUser, isEnterpriseUser, userPreferences]);
 
     const handleResetPreferencesRequest = useCallback(async () => {
         if (!googleUser?.email) {
@@ -452,11 +548,10 @@ function App() {
         setCurrentPage('loading');
         setLoadingMessage('Resetting preferences...');
         try {
-            await deletePreferences(googleUser.email); // Using deletePreferences here (updates timestamp)
+            await deletePreferences(googleUser.email);
             setUserPreferences(null);
-            // setPreferenceUpdateTimestamp is handled within deletePreferences
             setCurrentPage('onboarding');
-            // Show different message depending on tier
+            // Use top banner for reset confirmation
             if (isProUser || isEnterpriseUser) {
                 showAppNotification(
                     "Preferences reset! Your personalized brief will update within a few hours. Upgrade to Enterprise for instant changes.",
@@ -471,7 +566,7 @@ function App() {
              setCurrentPage('error');
              showAppNotification(`Failed to reset preferences: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
         }
-    }, [googleUser, deletePreferences, showAppNotification, isProUser, isEnterpriseUser]); // Added dependencies
+    }, [googleUser, deletePreferences, showAppNotification, isProUser, isEnterpriseUser]);
 
     const showUpgradePage = useCallback(() => setCurrentPage('upgrade'), []);
     const showDashboard = useCallback(() => {
@@ -495,29 +590,33 @@ function App() {
                  return (
                      <>
                          <Background />
-                         {/* <<< ADDED preferenceUpdateTimestamp prop */}
                          <Dashboard
-                             onEditPreferences={handleResetPreferencesRequest} // Uses deletePreferences
+                             onEditPreferences={handleResetPreferencesRequest}
                              initialPreferences={userPreferences}
                              onLogout={handleLogout}
-                             googleUser={googleUser} // Pass googleUser down
+                             googleUser={googleUser}
                              onNavigateToUpgrade={showUpgradePage}
-                             telegramId={telegramId} // Pass current state
-                             teleUpdateRate={teleUpdateRate} // Pass current state
-                             onSaveTelegramDetails={saveTelegramDetails} // Pass the callback
+                             telegramId={telegramId}
+                             teleUpdateRate={teleUpdateRate}
+                             onSaveTelegramDetails={saveTelegramDetails}
                              isPro={isProUser}
                              isEnterprise={isEnterpriseUser}
                              watchlistNews={watchlistNews}
                              sectorNews={sectorNews}
                              narrativeNews={narrativeNews}
-                             preferenceUpdateTimestamp={preferenceUpdateTimestamp} // Pass the timestamp
-                             showAppNotification={showAppNotification}
+                             preferenceUpdateTimestamp={preferenceUpdateTimestamp}
+                             showAppNotification={showAppNotification} // Pass down the banner notification function
                          />
                      </>
                  );
              case 'upgrade':
                  if (!isAuthenticated || !googleUser) { handleLogout(); return null; }
-                 return <UpgradePage onGoBack={showDashboard} userEmail={googleUser.email} onRedeemCode={redeemProCode} showAppNotification={showAppNotification} />; // Uses redeemProCode
+                 return <UpgradePage
+                            onGoBack={showDashboard}
+                            userEmail={googleUser.email}
+                            onRedeemCode={redeemProCode} // Passes function that now triggers the big modal
+                            showAppNotification={showAppNotification} // Still pass banner for potential other messages in UpgradePage
+                        />;
             case 'landing':
             default:
                  if (errorMessage) setErrorMessage(null);
@@ -546,6 +645,7 @@ function App() {
 
     return (
         <>
+             {/* Top Banner Notifications */}
              {appNotification && (
                  <AppNotification
                      message={appNotification.message}
@@ -553,6 +653,12 @@ function App() {
                      onClose={() => setAppNotification(null)}
                  />
              )}
+             {/* <<< Render the new Upgrade Success Modal >>> */}
+             <UpgradeSuccessModal
+                isOpen={isUpgradeModalOpen}
+                onClose={() => setIsUpgradeModalOpen(false)}
+            />
+             {/* Render the current page content */}
             {renderCurrentPage()}
         </>
     );
