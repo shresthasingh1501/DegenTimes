@@ -1,7 +1,7 @@
 // src/components/OnboardingWizard.tsx
-import React, { useState, KeyboardEvent } from 'react';
+import React, { useState, KeyboardEvent, useEffect } from 'react'; // Import useEffect
 import clsx from 'clsx';
-import { X } from 'lucide-react';
+import { X, AlertTriangle } from 'lucide-react'; // Import AlertTriangle
 
 // --- Data Constants ---
 const SECTORS = ['DeFi', 'Gaming', 'NFTs', 'Infrastructure', 'Memecoins', 'AI', 'RWA', 'SocialFi'];
@@ -25,8 +25,8 @@ export interface UserPreferences {
 }
 
 interface OnboardingWizardProps {
-    onComplete: (preferences: UserPreferences) => void; // Changed: Removed Promise<void> as App handles async
-    isSaving?: boolean; // Prop to indicate if parent is saving
+    onComplete: (preferences: UserPreferences) => void;
+    isSaving?: boolean;
 }
 
 // --- Component ---
@@ -40,33 +40,55 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
     const [customNarrativeInput, setCustomNarrativeInput] = useState('');
     const [customWatchlistInput, setCustomWatchlistInput] = useState('');
 
+    // State for validation warnings
+    const [sectorWarning, setSectorWarning] = useState<string | null>(null);
+    const [narrativeWarning, setNarrativeWarning] = useState<string | null>(null);
+    const [watchlistWarning, setWatchlistWarning] = useState<string | null>(null);
+
+
     const totalSteps = 4; // Welcome, Sectors, Narratives, Watchlist
+
+    // Effect to clear warnings when the step changes
+    useEffect(() => {
+        setSectorWarning(null);
+        setNarrativeWarning(null);
+        setWatchlistWarning(null);
+    }, [step]);
+
 
     // --- Handlers ---
     const handleToggleSelection = (
         item: string,
         list: string[],
-        setter: React.Dispatch<React.SetStateAction<string[]>>
+        setter: React.Dispatch<React.SetStateAction<string[]>>,
+        warningSetter: React.Dispatch<React.SetStateAction<string | null>> // Added warningSetter
     ) => {
-        if (isSaving) return; // Prevent changes while saving
-        if (list.includes(item)) {
-            setter(list.filter((i) => i !== item));
-        } else {
-            setter([...list, item]);
-        }
+        if (isSaving) return;
+        const newList = list.includes(item) ? list.filter((i) => i !== item) : [...list, item];
+        setter(newList);
+        warningSetter(null); // Clear warning when user selects/deselects
     };
 
     const handleAddCustomItem = (
         input: string,
         list: string[],
         setter: React.Dispatch<React.SetStateAction<string[]>>,
-        clearInput: () => void
+        clearInput: () => void,
+        warningSetter: React.Dispatch<React.SetStateAction<string | null>> // Added warningSetter
     ) => {
-        if (isSaving) return; // Prevent changes while saving
+        if (isSaving) return;
         const trimmedInput = input.trim();
         if (trimmedInput && !list.includes(trimmedInput)) {
             setter([...list, trimmedInput]);
             clearInput();
+            warningSetter(null); // Clear warning when user adds item
+        } else if (trimmedInput && list.includes(trimmedInput)) {
+             // Optional: Show a warning if item is already added
+             // warningSetter(`"${trimmedInput}" is already added.`);
+             clearInput(); // Clear input even if duplicate
+        } else if (trimmedInput === '') {
+             // Optional: Show a warning if input is empty
+             // warningSetter("Input cannot be empty.");
         }
     };
 
@@ -75,15 +97,16 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
         list: string[],
         setter: React.Dispatch<React.SetStateAction<string[]>>
     ) => {
-        if (isSaving) return; // Prevent changes while saving
+        if (isSaving) return;
         setter(list.filter((item) => item !== itemToRemove));
+        // No need to clear warning here, validation happens on 'Next'/'Finish'
     };
 
     const handleKeyDown = (
         e: KeyboardEvent<HTMLInputElement>,
-        addFn: () => void
+        addFn: () => void // The add function already includes warning clearing
     ) => {
-        if (isSaving) return; // Prevent changes while saving
+        if (isSaving) return;
         if (e.key === 'Enter') {
             e.preventDefault();
             addFn();
@@ -91,27 +114,81 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
     };
 
     const handleFinish = () => {
-        // No async needed here, App.tsx handles the saving process
-        if (isSaving) return; // Prevent multiple submissions
+        if (isSaving) return;
+
+        // Validate Watchlist step
+        const trimmedInput = customWatchlistInput.trim();
+        if (trimmedInput) {
+            setWatchlistWarning(`You have unadded text "${trimmedInput}" in the custom watchlist field. Click 'Add' or clear the field.`);
+            return;
+        }
+        if (selectedWatchlistItems.length === 0) {
+            setWatchlistWarning("Please select or add at least one watchlist item to continue.");
+            return;
+        }
+
+        // If validation passes
+        setWatchlistWarning(null);
         const preferences: UserPreferences = {
             selectedSectors: selectedSectors,
             selectedNarratives: selectedNarratives,
             watchlistItems: selectedWatchlistItems,
         };
         console.log("OnboardingWizard: Final preferences ready, calling onComplete.", preferences);
-        onComplete(preferences); // Pass data up to App.tsx
+        onComplete(preferences);
     };
 
     const nextStep = () => {
+        if (isSaving) return;
+
+        // Validation logic before moving to the next step
+        if (step === 2) { // Validating Sectors before moving to Narratives
+            const trimmedInput = customSectorInput.trim();
+            if (trimmedInput) {
+                 setSectorWarning(`You have unadded text "${trimmedInput}" in the custom sector field. Click 'Add' or clear the field.`);
+                 return;
+             }
+            if (selectedSectors.length === 0) {
+                setSectorWarning("Please select or add at least one sector to continue.");
+                return;
+            }
+             setSectorWarning(null); // Clear warning if validation passes
+
+        } else if (step === 3) { // Validating Narratives before moving to Watchlist
+            const trimmedInput = customNarrativeInput.trim();
+            if (trimmedInput) {
+                setNarrativeWarning(`You have unadded text "${trimmedInput}" in the custom narrative field. Click 'Add' or clear the field.`);
+                return;
+            }
+            if (selectedNarratives.length === 0) {
+                setNarrativeWarning("Please select or add at least one narrative to continue.");
+                return;
+            }
+             setNarrativeWarning(null); // Clear warning if validation passes
+        }
+        // For step 1, no validation needed before moving to step 2
+
         if (step < totalSteps) {
             setStep(step + 1);
         }
     };
 
     const prevStep = () => {
+        if (isSaving) return;
         if (step > 1) {
             setStep(step - 1);
         }
+    };
+
+    // Helper to render warning message
+    const renderWarning = (message: string | null) => {
+        if (!message) return null;
+        return (
+            <div className="flex items-center gap-2 p-3 mb-4 text-sm text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900 rounded-md border border-red-400 dark:border-red-700">
+                <AlertTriangle size={18} className="flex-shrink-0" />
+                <span>{message}</span>
+            </div>
+        );
     };
 
     // --- Render Step Content ---
@@ -127,7 +204,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                         <button
                             onClick={nextStep}
                             disabled={isSaving}
-                            className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-lg disabled:opacity-50"
+                            className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             Get Started
                         </button>
@@ -143,7 +220,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                             {SECTORS.map((sector) => (
                                 <button
                                     key={sector}
-                                    onClick={() => handleToggleSelection(sector, selectedSectors, setSelectedSectors)}
+                                    onClick={() => handleToggleSelection(sector, selectedSectors, setSelectedSectors, setSectorWarning)}
                                     disabled={isSaving}
                                     className={clsx(
                                         'px-4 py-2 rounded-full border transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed',
@@ -161,14 +238,17 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                              <input
                                 type="text"
                                 value={customSectorInput}
-                                onChange={(e) => setCustomSectorInput(e.target.value)}
+                                onChange={(e) => {
+                                    setCustomSectorInput(e.target.value);
+                                    setSectorWarning(null); // Clear warning when typing
+                                }}
                                 placeholder="Add custom sector..."
                                 disabled={isSaving}
-                                onKeyDown={(e) => handleKeyDown(e, () => handleAddCustomItem(customSectorInput, selectedSectors, setSelectedSectors, () => setCustomSectorInput('')))}
+                                onKeyDown={(e) => handleKeyDown(e, () => handleAddCustomItem(customSectorInput, selectedSectors, setSelectedSectors, () => setCustomSectorInput(''), setSectorWarning))}
                                 className="flex-grow px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50 disabled:bg-gray-100 dark:disabled:bg-gray-600"
                              />
                              <button
-                                onClick={() => handleAddCustomItem(customSectorInput, selectedSectors, setSelectedSectors, () => setCustomSectorInput(''))}
+                                onClick={() => handleAddCustomItem(customSectorInput, selectedSectors, setSelectedSectors, () => setCustomSectorInput(''), setSectorWarning)}
                                 disabled={isSaving || !customSectorInput.trim()}
                                 className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                              >
@@ -176,7 +256,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                              </button>
                          </div>
                          {/* Display Custom/Selected Sectors */}
-                         <div className="flex flex-wrap gap-2 min-h-[2rem]"> {/* Added min-height */}
+                         <div className="flex flex-wrap gap-2 min-h-[2rem] mb-4"> {/* Added mb-4 for spacing */}
                              {selectedSectors.map((sector) => (
                                  <span key={sector} className="flex items-center gap-1 px-3 py-1 rounded-full bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 text-sm">
                                      {sector}
@@ -191,6 +271,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                                  </span>
                              ))}
                          </div>
+                         {renderWarning(sectorWarning)} {/* Render warning */}
                     </div>
                 );
             case 3: // Select Narratives
@@ -203,7 +284,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                             {NARRATIVES.map((narrative) => (
                                 <button
                                     key={narrative}
-                                    onClick={() => handleToggleSelection(narrative, selectedNarratives, setSelectedNarratives)}
+                                    onClick={() => handleToggleSelection(narrative, selectedNarratives, setSelectedNarratives, setNarrativeWarning)}
                                     disabled={isSaving}
                                     className={clsx(
                                         'px-4 py-2 rounded-full border transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed',
@@ -221,14 +302,17 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                             <input
                                 type="text"
                                 value={customNarrativeInput}
-                                onChange={(e) => setCustomNarrativeInput(e.target.value)}
+                                onChange={(e) => {
+                                    setCustomNarrativeInput(e.target.value);
+                                    setNarrativeWarning(null); // Clear warning when typing
+                                }}
                                 placeholder="Add custom narrative..."
                                 disabled={isSaving}
-                                onKeyDown={(e) => handleKeyDown(e, () => handleAddCustomItem(customNarrativeInput, selectedNarratives, setSelectedNarratives, () => setCustomNarrativeInput('')))}
+                                onKeyDown={(e) => handleKeyDown(e, () => handleAddCustomItem(customNarrativeInput, selectedNarratives, setSelectedNarratives, () => setCustomNarrativeInput(''), setNarrativeWarning))}
                                 className="flex-grow px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50 disabled:bg-gray-100 dark:disabled:bg-gray-600"
                             />
                             <button
-                                onClick={() => handleAddCustomItem(customNarrativeInput, selectedNarratives, setSelectedNarratives, () => setCustomNarrativeInput(''))}
+                                onClick={() => handleAddCustomItem(customNarrativeInput, selectedNarratives, setSelectedNarratives, () => setCustomNarrativeInput(''), setNarrativeWarning)}
                                 disabled={isSaving || !customNarrativeInput.trim()}
                                 className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                             >
@@ -236,7 +320,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                             </button>
                         </div>
                         {/* Display Custom/Selected Narratives */}
-                        <div className="flex flex-wrap gap-2 min-h-[2rem]"> {/* Added min-height */}
+                        <div className="flex flex-wrap gap-2 min-h-[2rem] mb-4"> {/* Added mb-4 for spacing */}
                             {selectedNarratives.map((narrative) => (
                                 <span key={narrative} className="flex items-center gap-1 px-3 py-1 rounded-full bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 text-sm">
                                     {narrative}
@@ -251,6 +335,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                                 </span>
                             ))}
                         </div>
+                         {renderWarning(narrativeWarning)} {/* Render warning */}
                     </div>
                 );
             case 4: // Setup Watchlist
@@ -263,7 +348,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                             {POPULAR_TOKENS.map((token) => (
                                 <button
                                     key={token.id}
-                                    onClick={() => handleToggleSelection(token.id, selectedWatchlistItems, setSelectedWatchlistItems)}
+                                    onClick={() => handleToggleSelection(token.id, selectedWatchlistItems, setSelectedWatchlistItems, setWatchlistWarning)}
                                     disabled={isSaving}
                                     className={clsx(
                                         'px-4 py-2 rounded-full border transition-colors text-sm font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed',
@@ -281,14 +366,17 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                             <input
                                 type="text"
                                 value={customWatchlistInput}
-                                onChange={(e) => setCustomWatchlistInput(e.target.value)}
+                                onChange={(e) => {
+                                     setCustomWatchlistInput(e.target.value);
+                                     setWatchlistWarning(null); // Clear warning when typing
+                                }}
                                 placeholder="Add watchlist item (e.g., token, project)..."
                                 disabled={isSaving}
-                                onKeyDown={(e) => handleKeyDown(e, () => handleAddCustomItem(customWatchlistInput, selectedWatchlistItems, setSelectedWatchlistItems, () => setCustomWatchlistInput('')))}
+                                onKeyDown={(e) => handleKeyDown(e, () => handleAddCustomItem(customWatchlistInput, selectedWatchlistItems, setSelectedWatchlistItems, () => setCustomWatchlistInput(''), setWatchlistWarning))}
                                 className="flex-grow px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50 disabled:bg-gray-100 dark:disabled:bg-gray-600"
                             />
                             <button
-                                onClick={() => handleAddCustomItem(customWatchlistInput, selectedWatchlistItems, setSelectedWatchlistItems, () => setCustomWatchlistInput(''))}
+                                onClick={() => handleAddCustomItem(customWatchlistInput, selectedWatchlistItems, setSelectedWatchlistItems, () => setCustomWatchlistInput(''), setWatchlistWarning)}
                                 disabled={isSaving || !customWatchlistInput.trim()}
                                 className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                             >
@@ -296,7 +384,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                             </button>
                         </div>
                         {/* Display Custom/Selected Watchlist Items */}
-                        <div className="flex flex-wrap gap-2 min-h-[2rem]"> {/* Added min-height */}
+                        <div className="flex flex-wrap gap-2 min-h-[2rem] mb-4"> {/* Added mb-4 for spacing */}
                             {selectedWatchlistItems.map((item) => (
                                 <span key={item} className="flex items-center gap-1 px-3 py-1 rounded-full bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 text-sm">
                                      {/* Display full name if it's a popular token, otherwise the item itself */}
@@ -312,6 +400,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                                 </span>
                             ))}
                         </div>
+                        {renderWarning(watchlistWarning)} {/* Render warning */}
                     </div>
                 );
             default:
@@ -361,7 +450,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                             Next
                         </button>
                     ) : (
-                        <button
+                        <buttonOnboardin
                             onClick={handleFinish}
                             disabled={isSaving} // Disable finish button when saving
                             className="px-5 py-2 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-wait" // Use cursor-wait when saving
