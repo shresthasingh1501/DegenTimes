@@ -280,11 +280,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         switch(activeNewsTab) {
             case 'watchlist':
-                return watchlistNews ? <ReactMarkdown {...markdownProps}>{watchlistNews}</ReactMarkdown> : <p className="italic text-gray-500 dark:text-gray-400">No watchlist news available.</p>;
+                return watchlistNews ? <ReactMarkdown {...markdownProps}>{watchlistNews}</ReactMarkdown> : <p className="italic text-gray-500 dark:text-gray-400">Our agents are are cooking your daily debrief , check back in 20 mins.</p>;
             case 'sector':
-                return sectorNews ? <ReactMarkdown {...markdownProps}>{sectorNews}</ReactMarkdown> : <p className="italic text-gray-500 dark:text-gray-400">No sector news available.</p>;
+                return sectorNews ? <ReactMarkdown {...markdownProps}>{sectorNews}</ReactMarkdown> : <p className="italic text-gray-500 dark:text-gray-400">We are cooking your daily debrief , check back in 20 mins.</p>;
             case 'narrative':
-                return narrativeNews ? <ReactMarkdown {...markdownProps}>{narrativeNews}</ReactMarkdown> : <p className="italic text-gray-500 dark:text-gray-400">No narrative news available.</p>;
+                return narrativeNews ? <ReactMarkdown {...markdownProps}>{narrativeNews}</ReactMarkdown> : <p className="italic text-gray-500 dark:text-gray-400">We are cooking your daily debrief , check back in 20 mins.</p>;
             case 'trending':
                 if (trendingLoading) {
                     return <div className="flex justify-center items-center h-40"><LoaderIcon className="w-8 h-8 animate-spin text-purple-500" /></div>;
